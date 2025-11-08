@@ -1,9 +1,4 @@
-"""add system config table
-
-Revision ID: 0002
-Revises: 0001
-Create Date: 2025-02-14 00:00:00.000000
-"""
+"""add system config table"""
 
 from __future__ import annotations
 
@@ -11,9 +6,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-
 # revision identifiers, used by Alembic.
-revision = "0002"
+revision = "6a9b2b318118"
 down_revision = "0001"
 branch_labels = None
 depends_on = None
