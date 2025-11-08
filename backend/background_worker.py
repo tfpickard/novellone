@@ -11,7 +11,7 @@ from config_store import RuntimeConfig, get_runtime_config
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
 from story_evaluator import evaluate_story
-from story_generator import generate_chapter, spawn_new_story
+from story_generator import generate_chapter, generate_cover_image, spawn_new_story
 from websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -172,12 +172,24 @@ class BackgroundWorker:
             story.completed_at = datetime.utcnow()
             story.completion_reason = reason
             await session.flush()
+            
+            # Generate cover image for the completed story
+            try:
+                cover_url = await generate_cover_image(story.title, story.premise)
+                if cover_url:
+                    story.cover_image_url = cover_url
+                    await session.flush()
+                    logger.info("Cover image generated for story %s", story.title)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
+            
             if settings.enable_websocket:
                 await ws_manager.broadcast(
                     {
                         "type": "story_completed",
                         "story_id": str(story.id),
                         "reason": reason,
+                        "cover_image_url": story.cover_image_url,
                     }
                 )
             logger.info("Story %s completed: %s", story.title, reason)
