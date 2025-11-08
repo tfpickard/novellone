@@ -54,7 +54,10 @@ class BackgroundWorker:
 
             now = datetime.utcnow()
             for story in active_stories:
-                await session.refresh(story, attribute_names=["chapter_count", "last_chapter_at"])
+                await session.refresh(
+                    story,
+                    attribute_names=["chapter_count", "last_chapter_at", "status"],
+                )
                 await self._process_story(session, story, now)
 
             await session.commit()
@@ -63,6 +66,9 @@ class BackgroundWorker:
             await session.commit()
 
     async def _process_story(self, session, story: Story, now: datetime) -> None:
+        if story.status != "active":
+            return
+
         if story.chapter_count >= settings.max_chapters_per_story:
             await self._complete_story(session, story, "Reached max chapters")
             return

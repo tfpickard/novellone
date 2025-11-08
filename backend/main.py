@@ -242,12 +242,14 @@ async def kill_story(
         raise HTTPException(status_code=404, detail="Story not found")
 
     reason = (payload.reason or "Terminated manually").strip() or "Terminated manually"
+    settings = get_settings()
+
     if story.status != "completed":
         story.status = "completed"
         story.completed_at = datetime.utcnow()
         story.completion_reason = reason
-        await session.flush()
-        settings = get_settings()
+        await session.commit()
+
         if settings.enable_websocket:
             await ws_manager.broadcast(
                 {
@@ -258,6 +260,9 @@ async def kill_story(
             )
         logger.info("Story %s killed manually: %s", story.title, reason)
     else:
+        if story.completion_reason != reason:
+            story.completion_reason = reason
+            await session.commit()
         logger.info("Kill requested for already completed story %s", story.title)
 
     return await get_story(story_id, session)
