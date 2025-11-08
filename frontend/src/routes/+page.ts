@@ -1,18 +1,10 @@
 import type { PageLoad } from './$types';
+import { getStories, getConfig } from '$lib/api';
 
-const base = (import.meta.env.VITE_PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8000';
-const normalized = base.startsWith('http') ? base : `http://${base}`;
-
-export const load: PageLoad = async ({ url, fetch }) => {
+export const load: PageLoad = async ({ url }) => {
   const params = new URLSearchParams(url.searchParams);
-  const response = await fetch(`${normalized}/api/stories?${params.toString()}`);
-  const stories = await response.json();
-
-  const configRes = await fetch(`${normalized}/api/config`);
-  const config = await configRes.json();
-
-  return {
-    stories,
-    config
-  };
+  const [stories, config] = await Promise.all([getStories(params), getConfig()]);
+  return { stories, config };
 };
+
+

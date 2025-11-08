@@ -1,13 +1,8 @@
 import type { PageLoad } from './$types';
+import { getStats, getConfig } from '$lib/api';
 
-const base = (import.meta.env.VITE_PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8000';
-const normalized = base.startsWith('http') ? base : `http://${base}`;
-
-export const load: PageLoad = async ({ fetch }) => {
-  const statsRes = await fetch(`${normalized}/api/stats`);
-  const configRes = await fetch(`${normalized}/api/config`);
-  return {
-    stats: await statsRes.json(),
-    config: await configRes.json()
-  };
+export const load: PageLoad = async () => {
+  const [stats, config] = await Promise.all([getStats(), getConfig()]);
+  return { stats, config };
 };
+

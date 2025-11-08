@@ -1,9 +1,12 @@
 const publicApiUrl = import.meta.env.VITE_PUBLIC_API_URL as string | undefined;
 let base = publicApiUrl;
+
 if (!base) {
   if (typeof window !== 'undefined') {
+    // Browser fallback: call the host you’re visiting on port 8000
     base = `${window.location.hostname}:8000`;
   } else {
+    // SSR in Docker fallback: use the Compose service DNS name
     base = 'backend:8000';
   }
 }
@@ -41,3 +44,4 @@ export function getStats(): Promise<any> {
 export function getConfig(): Promise<any> {
   return request('/api/config');
 }
+
