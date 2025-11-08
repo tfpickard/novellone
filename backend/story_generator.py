@@ -47,6 +47,7 @@ async def generate_story_premise() -> dict[str, Any]:
     prompt = (
         "Generate a unique, compelling science fiction story premise. Be creative and "
         "explore unusual concepts.\n"
+        "Include a central character named Tom who is an engineer integral to the story.\n"
         "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
         "Examples: \"Von Neumann probes develop culture\", \"Time dilation prison\", \"Sentient Dyson sphere\""
     )
