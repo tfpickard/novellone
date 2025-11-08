@@ -3,12 +3,15 @@
   import type { PageData } from './$types';
   import { applyStoryTheme, type StoryTheme } from '$lib/theme';
   import { createStorySocket, type StorySocketMessage } from '$lib/websocket';
+  import { killStory as killStoryRequest } from '$lib/api';
 
   export let data: PageData;
 
   let story = data.story;
   let container: HTMLElement;
   let socket: WebSocket | null = null;
+  let killing = false;
+  let killError: string | null = null;
 
   const theme = story.theme_json as StoryTheme;
 
@@ -18,7 +21,9 @@
       story = {
         ...story,
         chapters: [...story.chapters, message.chapter],
-        chapter_count: story.chapter_count + 1
+        chapter_count: story.chapter_count + 1,
+        total_tokens:
+          (story.total_tokens ?? 0) + (message.chapter.tokens_used ?? 0)
       };
       await tick();
       const last = document.querySelector('.chapter:last-of-type');
@@ -30,6 +35,27 @@
         status: 'completed',
         completion_reason: message.reason
       };
+    }
+  }
+
+  async function handleKill() {
+    if (killing || story.status !== 'active') {
+      return;
+    }
+    const input = window.prompt('Provide a reason for ending this story', story.completion_reason ?? 'Terminated manually');
+    if (input === null) {
+      return;
+    }
+    killing = true;
+    killError = null;
+    try {
+      const updated = await killStoryRequest(story.id, input.trim() || undefined);
+      story = updated;
+    } catch (error) {
+      console.error('Failed to kill story', error);
+      killError = error instanceof Error ? error.message : 'Failed to end story';
+    } finally {
+      killing = false;
     }
   }
 
@@ -56,20 +82,30 @@
         {#if theme?.mood}<span class="badge">{theme.mood}</span>{/if}
       </div>
     </div>
-    <aside class="meta">
-      <div>
-        <span>Chapters</span>
-        <strong>{story.chapter_count}</strong>
-      </div>
-      <div>
-        <span>Status</span>
-        <strong>{story.status}</strong>
-      </div>
-      <div>
-        <span>Tokens</span>
-        <strong>{story.total_tokens ?? 0}</strong>
-      </div>
-    </aside>
+    <div class="side-panel">
+      <aside class="meta">
+        <div>
+          <span>Chapters</span>
+          <strong>{story.chapter_count}</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong>{story.status}</strong>
+        </div>
+        <div>
+          <span>Tokens</span>
+          <strong>{story.total_tokens ?? 0}</strong>
+        </div>
+      </aside>
+      {#if story.status === 'active'}
+        <button class="kill-button" on:click={handleKill} disabled={killing}>
+          {killing ? 'Ending…' : 'Kill Story'}
+        </button>
+      {/if}
+      {#if killError}
+        <p class="kill-error">{killError}</p>
+      {/if}
+    </div>
   </header>
 
   {#if story.status === 'completed' && story.completion_reason}
@@ -104,6 +140,13 @@
     align-items: flex-start;
     gap: 2rem;
     margin-bottom: 2rem;
+  }
+
+  .side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
   }
 
   .story-header h1 {
@@ -161,6 +204,36 @@
 
   .meta strong {
     font-size: 1.4rem;
+  }
+
+  .kill-button {
+    background: #dc2626;
+    color: #f8fafc;
+    border: none;
+    border-radius: 999px;
+    padding: 0.6rem 1.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 10px 24px rgba(220, 38, 38, 0.35);
+  }
+
+  .kill-button:hover:enabled {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px rgba(220, 38, 38, 0.45);
+  }
+
+  .kill-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .kill-error {
+    color: #fca5a5;
+    font-size: 0.85rem;
+    margin: 0;
   }
 
   .status {
@@ -227,6 +300,10 @@
     }
 
     .meta {
+      width: 100%;
+    }
+
+    .side-panel {
       width: 100%;
     }
   }

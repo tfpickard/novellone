@@ -54,7 +54,10 @@ class BackgroundWorker:
 
             now = datetime.utcnow()
             for story in active_stories:
-                await session.refresh(story, attribute_names=["chapter_count", "last_chapter_at"])
+                await session.refresh(
+                    story,
+                    attribute_names=["chapter_count", "last_chapter_at", "status"],
+                )
                 await self._process_story(session, story, now)
 
             await session.commit()
@@ -63,6 +66,9 @@ class BackgroundWorker:
             await session.commit()
 
     async def _process_story(self, session, story: Story, now: datetime) -> None:
+        if story.status != "active":
+            return
+
         if story.chapter_count >= settings.max_chapters_per_story:
             await self._complete_story(session, story, "Reached max chapters")
             return
@@ -104,9 +110,18 @@ class BackgroundWorker:
                     "chapter_number": chapter.chapter_number,
                     "content": chapter.content,
                     "created_at": chapter.created_at.isoformat(),
+                    "tokens_used": chapter.tokens_used,
+                    "generation_time_ms": chapter.generation_time_ms,
+                    "model_used": chapter.model_used,
                 },
             })
-        logger.info("Generated chapter %s for story %s", chapter.chapter_number, story.title)
+        logger.info(
+            "Generated chapter %s for story %s (%s tokens, %s ms)",
+            chapter.chapter_number,
+            story.title,
+            tokens,
+            chapter.generation_time_ms,
+        )
 
     async def _evaluate_story(self, session, story: Story) -> None:
         chapters_stmt = select(Chapter).where(Chapter.story_id == story.id).order_by(Chapter.chapter_number)

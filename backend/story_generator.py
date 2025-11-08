@@ -16,7 +16,7 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 async def _call_openai(
     model: str, prompt: str, *, max_tokens: int, temperature: float
-) -> str:
+) -> tuple[str, dict[str, int] | None]:
     try:
         response = await _client.responses.create(
             model=model,
@@ -28,21 +28,45 @@ async def _call_openai(
         logger.exception("OpenAI request failed: %s", exc)
         raise
 
+    usage: dict[str, int] | None = None
+    response_usage = getattr(response, "usage", None)
+    if response_usage is not None:
+        if hasattr(response_usage, "model_dump"):
+            usage = {
+                key: int(value)
+                for key, value in response_usage.model_dump().items()
+                if isinstance(value, (int, float))
+            }
+        elif isinstance(response_usage, dict):
+            usage = {
+                key: int(value)
+                for key, value in response_usage.items()
+                if isinstance(value, (int, float))
+            }
+        else:
+            extracted: dict[str, int] = {}
+            for key in ("output_tokens", "input_tokens", "total_tokens", "completion_tokens"):
+                value = getattr(response_usage, key, None)
+                if isinstance(value, (int, float)):
+                    extracted[key] = int(value)
+            usage = extracted or None
+
     text = getattr(response, "output_text", None)
     if text:
-        return text
+        return text, usage
 
     output = getattr(response, "output", None)
     if not output:
         raise RuntimeError("OpenAI response was empty")
 
     if output[0].type == "message":
-        return output[0].content[0].text
-    return "".join(
+        return output[0].content[0].text, usage
+    text_output = "".join(
         part.content[0].text if getattr(part, "type", None) == "message" else ""
         for part in output
         if hasattr(part, "content")
     )
+    return text_output, usage
 
 
 async def generate_story_premise() -> dict[str, Any]:
@@ -53,7 +77,7 @@ async def generate_story_premise() -> dict[str, Any]:
         "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
         'Examples: "Von Neumann probes develop culture", "Time dilation prison", "Sentient Dyson sphere"'
     )
-    text = await _call_openai(
+    text, _ = await _call_openai(
         _settings.openai_premise_model,
         prompt,
         max_tokens=_settings.openai_max_tokens_premise,
@@ -81,7 +105,7 @@ async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
         "border_radius, shadow_style, animation_speed}.\n"
         "Make colors harmonious and readable. Choose fonts that match aesthetic."
     )
-    text = await _call_openai(
+    text, _ = await _call_openai(
         _settings.openai_premise_model,
         prompt,
         max_tokens=_settings.openai_max_tokens_premise,
@@ -169,7 +193,7 @@ async def generate_chapter(
         " Do not end mid-sentence; conclude with a strong beat or hook."
     )
     start = time.perf_counter()
-    text = await _call_openai(
+    text, usage = await _call_openai(
         _settings.openai_model,
         prompt,
         max_tokens=_settings.openai_max_tokens_chapter,
@@ -178,10 +202,17 @@ async def generate_chapter(
     if _needs_conclusion(text):
         text = await _complete_chapter(story, text)
     elapsed = int((time.perf_counter() - start) * 1000)
+    tokens_used: int | None = None
+    if usage:
+        tokens_used = (
+            usage.get("output_tokens")
+            or usage.get("completion_tokens")
+            or usage.get("total_tokens")
+        )
     return {
         "chapter_number": chapter_number,
         "content": text.strip(),
-        "tokens_used": None,
+        "tokens_used": tokens_used,
         "generation_time_ms": elapsed,
         "model_used": _settings.openai_model,
     }

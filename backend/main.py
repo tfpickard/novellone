@@ -23,13 +23,16 @@ from sqlalchemy.orm import selectinload
 
 from background_worker import worker
 from config import AppSettings, get_settings
+from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
 from story_generator import spawn_new_story
 from websocket_manager import ws_manager
 
+settings = get_settings()
+configure_logging(settings)
+
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=get_settings().log_level)
 
 app = FastAPI(title="Eternal Stories", version="1.0.0")
 
@@ -150,6 +153,10 @@ class StoryCreate(BaseModel):
     theme_json: dict[str, Any] | None = Field(default=None)
 
 
+class StoryKillRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     await worker.start()
@@ -224,6 +231,42 @@ async def get_story_theme(story_id: uuid.UUID, session: SessionDep) -> dict[str,
     if theme is None:
         raise HTTPException(status_code=404, detail="Story not found")
     return theme
+
+
+@app.post("/api/stories/{story_id}/kill")
+async def kill_story(
+    story_id: uuid.UUID,
+    payload: StoryKillRequest,
+    session: SessionDep,
+) -> dict[str, Any]:
+    stmt = select(Story).where(Story.id == story_id)
+    story = (await session.execute(stmt)).scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    reason = (payload.reason or "Terminated manually").strip() or "Terminated manually"
+    if story.status != "completed":
+        story.status = "completed"
+        story.completed_at = datetime.utcnow()
+        story.completion_reason = reason
+        await session.commit()
+
+        if settings.enable_websocket:
+            await ws_manager.broadcast(
+                {
+                    "type": "story_completed",
+                    "story_id": str(story.id),
+                    "reason": reason,
+                }
+            )
+        logger.info("Story %s killed manually: %s", story.title, reason)
+    else:
+        if story.completion_reason != reason:
+            story.completion_reason = reason
+            await session.commit()
+        logger.info("Kill requested for already completed story %s", story.title)
+
+    return await get_story(story_id, session)
 
 
 @app.post("/api/stories", status_code=201)
