@@ -40,6 +40,9 @@ class AppSettings(BaseSettings):
     log_level: Literal["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"] = Field(
         "INFO", alias="LOG_LEVEL"
     )
+    log_dir: str = Field("/app/logs", alias="LOG_DIR")
+    log_max_bytes: int = Field(5_000_000, alias="LOG_MAX_BYTES")
+    log_backup_count: int = Field(5, alias="LOG_BACKUP_COUNT")
     enable_websocket: bool = Field(True, alias="ENABLE_WEBSOCKET")
 
     public_api_url: Annotated[str | None, Field(default=None, alias="PUBLIC_API_URL")]

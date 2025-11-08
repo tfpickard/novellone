@@ -23,13 +23,16 @@ from sqlalchemy.orm import selectinload
 
 from background_worker import worker
 from config import AppSettings, get_settings
+from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
 from story_generator import spawn_new_story
 from websocket_manager import ws_manager
 
+settings = get_settings()
+configure_logging(settings)
+
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=get_settings().log_level)
 
 app = FastAPI(title="Eternal Stories", version="1.0.0")
 
@@ -242,8 +245,6 @@ async def kill_story(
         raise HTTPException(status_code=404, detail="Story not found")
 
     reason = (payload.reason or "Terminated manually").strip() or "Terminated manually"
-    settings = get_settings()
-
     if story.status != "completed":
         story.status = "completed"
         story.completed_at = datetime.utcnow()
