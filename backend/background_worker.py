@@ -104,9 +104,18 @@ class BackgroundWorker:
                     "chapter_number": chapter.chapter_number,
                     "content": chapter.content,
                     "created_at": chapter.created_at.isoformat(),
+                    "tokens_used": chapter.tokens_used,
+                    "generation_time_ms": chapter.generation_time_ms,
+                    "model_used": chapter.model_used,
                 },
             })
-        logger.info("Generated chapter %s for story %s", chapter.chapter_number, story.title)
+        logger.info(
+            "Generated chapter %s for story %s (%s tokens, %s ms)",
+            chapter.chapter_number,
+            story.title,
+            tokens,
+            chapter.generation_time_ms,
+        )
 
     async def _evaluate_story(self, session, story: Story) -> None:
         chapters_stmt = select(Chapter).where(Chapter.story_id == story.id).order_by(Chapter.chapter_number)

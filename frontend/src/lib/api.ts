@@ -37,6 +37,14 @@ export function getStory(id: string): Promise<any> {
   return request(`/api/stories/${id}`);
 }
 
+export function killStory(id: string, reason?: string): Promise<any> {
+  const body = reason ? { reason } : {};
+  return request(`/api/stories/${id}/kill`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
 export function getStats(): Promise<any> {
   return request('/api/stats');
 }
