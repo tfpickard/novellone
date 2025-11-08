@@ -164,7 +164,7 @@ async def _complete_chapter(story: Story, draft: str) -> str:
         "Write only the new concluding text."
     )
     max_tokens = max(256, int(_settings.openai_max_tokens_chapter * 0.35))
-    addition = await _call_openai(
+    addition, _ = await _call_openai(
         _settings.openai_model,
         completion_prompt,
         max_tokens=max_tokens,

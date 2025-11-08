@@ -22,7 +22,8 @@ from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import selectinload
 
 from background_worker import worker
-from config import AppSettings, get_settings
+from config import get_settings
+from config_store import apply_config_updates, get_runtime_config
 from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
@@ -52,9 +53,6 @@ async def get_db_session():
 
 
 SessionDep = Annotated[Any, Depends(get_db_session)]
-SettingsDep = Annotated[AppSettings, Depends(get_settings)]
-
-
 class ChapterRead(BaseModel):
     id: uuid.UUID
     chapter_number: int
@@ -172,17 +170,31 @@ async def shutdown_event() -> None:
     await worker.shutdown()
 
 
+class ConfigUpdate(BaseModel):
+    chapter_interval_seconds: Annotated[int | None, Field(default=None, ge=10, le=3600)] = None
+    evaluation_interval_chapters: Annotated[int | None, Field(default=None, ge=1, le=50)] = None
+    quality_score_min: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
+    max_chapters_per_story: Annotated[int | None, Field(default=None, ge=1, le=500)] = None
+    min_active_stories: Annotated[int | None, Field(default=None, ge=0, le=100)] = None
+    max_active_stories: Annotated[int | None, Field(default=None, ge=1, le=200)] = None
+    context_window_chapters: Annotated[int | None, Field(default=None, ge=1, le=50)] = None
+
+
 @app.get("/api/config")
-async def get_public_config(settings: SettingsDep) -> dict[str, Any]:
-    return {
-        "chapter_interval_seconds": settings.chapter_interval_seconds,
-        "evaluation_interval_chapters": settings.evaluation_interval_chapters,
-        "quality_score_min": settings.quality_score_min,
-        "max_chapters_per_story": settings.max_chapters_per_story,
-        "min_active_stories": settings.min_active_stories,
-        "max_active_stories": settings.max_active_stories,
-        "context_window_chapters": settings.context_window_chapters,
-    }
+async def get_public_config(session: SessionDep) -> dict[str, Any]:
+    runtime = await get_runtime_config(session)
+    return runtime.as_dict()
+
+
+@app.patch("/api/config")
+async def update_public_config(payload: ConfigUpdate, session: SessionDep) -> dict[str, Any]:
+    data = payload.model_dump(exclude_none=True)
+    try:
+        runtime = await apply_config_updates(session, data)
+    except ValueError as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await session.commit()
+    return runtime.as_dict()
 
 
 @app.get("/api/stories")
