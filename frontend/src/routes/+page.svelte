@@ -33,6 +33,11 @@
     {#each stories as story}
       <a class="story-card" href={`/story/${story.id}`} use:createThemeAction={story.theme_json as StoryTheme}>
         <div class="status" data-live={story.status === 'active'}>{story.status}</div>
+        {#if story.cover_art_url}
+          <div class="cover-thumb">
+            <img src={story.cover_art_url} alt={`Cover art for ${story.title}`} loading="lazy" />
+          </div>
+        {/if}
         <h2>{story.title}</h2>
         <div class="badges">
           {#if story.theme_json?.aesthetic}
@@ -43,6 +48,9 @@
           {/if}
         </div>
         <p class="premise">{story.premise}</p>
+        {#if story.summary}
+          <p class="summary">{story.summary}</p>
+        {/if}
         <footer>
           <span>{story.chapter_count} chapters</span>
           <span>{story.status === 'active' ? 'Live' : 'Completed'}</span>
@@ -114,6 +122,21 @@
     background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 40%);
   }
 
+  .cover-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 14px 32px rgba(2, 6, 23, 0.4);
+  }
+
+  .cover-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
   .story-card:hover {
     transform: translateY(-6px);
     box-shadow: 0 20px 40px rgba(14, 165, 233, 0.25);
@@ -147,6 +170,17 @@
     line-height: 1.5;
     color: var(--text-color, #e2e8f0);
     opacity: 0.9;
+  }
+
+  .summary {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    opacity: 0.8;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   footer {

@@ -279,6 +279,84 @@ async def generate_chapter(
     }
 
 
+async def generate_story_summary(story: Story, chapters: Sequence[Chapter]) -> str | None:
+    if not chapters:
+        return None
+
+    chapter_snippets = []
+    remaining = 6000
+    for chapter in chapters:
+        header = f"Chapter {chapter.chapter_number}: "
+        snippet = chapter.content.strip().replace("\n", " ")
+        if remaining <= 0:
+            break
+        if len(snippet) > remaining:
+            truncate_at = max(remaining - 3, 0)
+            snippet = snippet[:truncate_at].rstrip() + ("..." if truncate_at > 0 else "")
+        chapter_snippets.append(header + snippet)
+        remaining -= len(snippet) + len(header)
+        if remaining <= 0:
+            break
+
+    context = "\n".join(chapter_snippets)
+    prompt = (
+        "You will be given the title, premise, and excerpts from chapters of a science fiction story. "
+        "Write a vivid narrative summary in 4-6 sentences that highlights the central conflict, key characters, "
+        "and emotional tone. Keep it under 180 words.\n\n"
+        f"Title: {story.title}\n"
+        f"Premise: {story.premise}\n"
+        "Chapters:\n"
+        f"{context}\n\n"
+        "Summary:"
+    )
+    try:
+        text, _ = await _call_openai(
+            _settings.openai_premise_model,
+            prompt,
+            max_tokens=min(512, _settings.openai_max_tokens_premise),
+            temperature=max(0.6, _settings.openai_temperature_premise),
+        )
+    except OpenAIError:
+        return None
+
+    cleaned = text.strip()
+    return cleaned or None
+
+
+async def generate_story_cover_art(story: Story, summary: str) -> str | None:
+    prompt = (
+        "Create a cinematic, high-detail digital painting for the cover of a science fiction novel. "
+        f"Title: {story.title}. "
+        "Use the following story summary as inspiration for the central imagery, mood, lighting, and color palette. "
+        "Focus on atmosphere, dynamic composition, and memorable characters or symbols. "
+        "Avoid text in the artwork.\n\n"
+        f"Story summary: {summary}"
+    )
+
+    try:
+        response = await _client.images.generate(
+            model=getattr(_settings, "openai_image_model", "gpt-image-1"),
+            prompt=prompt,
+            size="1024x1024",
+            quality="high",
+        )
+    except OpenAIError as exc:
+        logger.exception("Failed to generate cover art for story %s: %s", story.id, exc)
+        return None
+
+    data = getattr(response, "data", None)
+    if not data:
+        return None
+    first = data[0]
+    url = getattr(first, "url", None)
+    if url:
+        return url
+    b64 = getattr(first, "b64_json", None)
+    if b64:
+        return f"data:image/png;base64,{b64}"
+    return None
+
+
 async def spawn_new_story() -> dict[str, Any]:
     premise_data = await generate_story_premise()
     title = premise_data.get("title") or "Untitled Expedition"
@@ -296,5 +374,7 @@ __all__ = [
     "generate_story_premise",
     "generate_story_theme",
     "generate_chapter",
+    "generate_story_summary",
+    "generate_story_cover_art",
     "spawn_new_story",
 ]

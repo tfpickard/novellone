@@ -33,7 +33,9 @@
       story = {
         ...story,
         status: 'completed',
-        completion_reason: message.reason
+        completion_reason: message.reason,
+        summary: message.summary ?? story.summary,
+        cover_art_url: message.cover_art_url ?? story.cover_art_url
       };
     }
   }
@@ -114,6 +116,20 @@
     </div>
   {/if}
 
+  {#if story.cover_art_url}
+    <figure class="cover-art">
+      <img src={story.cover_art_url} alt={`Cover art for ${story.title}`} loading="lazy" />
+      {#if story.summary}
+        <figcaption>{story.summary}</figcaption>
+      {/if}
+    </figure>
+  {:else if story.summary}
+    <section class="story-summary">
+      <h2>Story Summary</h2>
+      <p>{story.summary}</p>
+    </section>
+  {/if}
+
   <section class="chapters">
     {#each story.chapters as chapter (chapter.id)}
       <article class="chapter">
@@ -140,6 +156,43 @@
     align-items: flex-start;
     gap: 2rem;
     margin-bottom: 2rem;
+  }
+
+  .cover-art {
+    margin: 0 0 2rem 0;
+    display: grid;
+    gap: 1rem;
+    justify-items: center;
+    background: rgba(15, 23, 42, 0.65);
+    padding: 1.5rem;
+    border-radius: 20px;
+    box-shadow: 0 16px 30px rgba(8, 47, 73, 0.35);
+  }
+
+  .cover-art img {
+    max-width: min(100%, 480px);
+    border-radius: 16px;
+    box-shadow: 0 18px 36px rgba(2, 6, 23, 0.6);
+  }
+
+  .cover-art figcaption {
+    font-size: 1rem;
+    line-height: 1.6;
+    opacity: 0.9;
+  }
+
+  .story-summary {
+    margin-bottom: 2rem;
+    background: rgba(15, 23, 42, 0.65);
+    padding: 1.5rem;
+    border-radius: 20px;
+    box-shadow: 0 16px 30px rgba(8, 47, 73, 0.35);
+  }
+
+  .story-summary h2 {
+    margin-top: 0;
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    color: var(--primary-color, #38bdf8);
   }
 
   .side-panel {
