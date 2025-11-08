@@ -69,6 +69,67 @@ async def _call_openai(
     return text_output, usage
 
 
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Try to recover a JSON object from model output.
+
+    The Responses API sometimes wraps JSON in prose or Markdown code fences. This helper
+    extracts the first balanced JSON object it can find and parses it. If no valid JSON is
+    present, ``None`` is returned.
+    """
+
+    candidates: list[str] = []
+
+    trimmed = text.strip()
+    if trimmed:
+        candidates.append(trimmed)
+
+    fence_start = trimmed.find("```")
+    if fence_start != -1:
+        fence_end = trimmed.rfind("```")
+        if fence_end != -1 and fence_end > fence_start:
+            inner = trimmed[fence_start + 3 : fence_end]
+            inner = inner.lstrip("json\n\r ")
+            inner = inner.strip()
+            if inner:
+                candidates.append(inner)
+
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        end = start
+        while end < len(text):
+            char = text[end]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[start : end + 1].strip())
+                    break
+            end += 1
+        start = text.find("{", start + 1)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _safe_json_loads(text: str) -> dict[str, Any] | None:
+    result = None
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        result = _extract_json_object(text)
+    return result
+
+
 async def generate_story_premise() -> dict[str, Any]:
     prompt = (
         "Generate a unique, compelling science fiction story premise. Be creative and "
@@ -83,17 +144,17 @@ async def generate_story_premise() -> dict[str, Any]:
         max_tokens=_settings.openai_max_tokens_premise,
         temperature=_settings.openai_temperature_premise,
     )
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("Premise response not JSON, wrapping text")
-        return {
-            "title": "Untitled Expedition",
-            "premise": text.strip(),
-            "themes": [],
-            "setting": "Unknown",
-            "central_conflict": "Unclear",
-        }
+    parsed = _safe_json_loads(text)
+    if parsed is not None:
+        return parsed
+    logger.warning("Premise response not JSON, wrapping text")
+    return {
+        "title": "Untitled Expedition",
+        "premise": text.strip(),
+        "themes": [],
+        "setting": "Unknown",
+        "central_conflict": "Unclear",
+    }
 
 
 async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
@@ -111,27 +172,27 @@ async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
         max_tokens=_settings.openai_max_tokens_premise,
         temperature=_settings.openai_temperature_premise,
     )
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("Theme response not JSON, providing fallback theme")
-        return {
-            "primary_color": "#1f2933",
-            "secondary_color": "#3d5a80",
-            "background_color": "#0f172a",
-            "text_color": "#f8fafc",
-            "text_secondary": "#cbd5f5",
-            "accent_color": "#e0fbfc",
-            "border_color": "#1e293b",
-            "card_background": "#16213e",
-            "font_heading": "Orbitron, sans-serif",
-            "font_body": "Inter, sans-serif",
-            "aesthetic": "fallback",
-            "mood": "mysterious",
-            "border_radius": "12px",
-            "shadow_style": "0 12px 32px rgba(15, 23, 42, 0.45)",
-            "animation_speed": "0.4s",
-        }
+    parsed = _safe_json_loads(text)
+    if parsed is not None:
+        return parsed
+    logger.warning("Theme response not JSON, providing fallback theme")
+    return {
+        "primary_color": "#1f2933",
+        "secondary_color": "#3d5a80",
+        "background_color": "#0f172a",
+        "text_color": "#f8fafc",
+        "text_secondary": "#cbd5f5",
+        "accent_color": "#e0fbfc",
+        "border_color": "#1e293b",
+        "card_background": "#16213e",
+        "font_heading": "Orbitron, sans-serif",
+        "font_body": "Inter, sans-serif",
+        "aesthetic": "fallback",
+        "mood": "mysterious",
+        "border_radius": "12px",
+        "shadow_style": "0 12px 32px rgba(15, 23, 42, 0.45)",
+        "animation_speed": "0.4s",
+    }
 
 
 _TERMINATING_PUNCTUATION = {".", "!", "?", "…"}
