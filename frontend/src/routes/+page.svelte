@@ -32,21 +32,28 @@
   <section class="grid">
     {#each stories as story}
       <a class="story-card" href={`/story/${story.id}`} use:createThemeAction={story.theme_json as StoryTheme}>
-        <div class="status" data-live={story.status === 'active'}>{story.status}</div>
-        <h2>{story.title}</h2>
-        <div class="badges">
-          {#if story.theme_json?.aesthetic}
-            <span class="badge">{story.theme_json.aesthetic}</span>
-          {/if}
-          {#if story.theme_json?.mood}
-            <span class="badge">{story.theme_json.mood}</span>
-          {/if}
+        {#if story.cover_image_url && story.status === 'completed'}
+          <div class="card-cover-image">
+            <img src={story.cover_image_url} alt="{story.title} cover" />
+          </div>
+        {/if}
+        <div class="card-content">
+          <div class="status" data-live={story.status === 'active'}>{story.status}</div>
+          <h2>{story.title}</h2>
+          <div class="badges">
+            {#if story.theme_json?.aesthetic}
+              <span class="badge">{story.theme_json.aesthetic}</span>
+            {/if}
+            {#if story.theme_json?.mood}
+              <span class="badge">{story.theme_json.mood}</span>
+            {/if}
+          </div>
+          <p class="premise">{story.premise}</p>
+          <footer>
+            <span>{story.chapter_count} chapters</span>
+            <span>{story.status === 'active' ? 'Live' : 'Completed'}</span>
+          </footer>
         </div>
-        <p class="premise">{story.premise}</p>
-        <footer>
-          <span>{story.chapter_count} chapters</span>
-          <span>{story.status === 'active' ? 'Live' : 'Completed'}</span>
-        </footer>
       </a>
     {/each}
   </section>
@@ -103,20 +110,39 @@
   .story-card {
     background: var(--card-background, rgba(15, 23, 42, 0.9));
     border-radius: var(--border-radius, 16px);
-    padding: 1.75rem;
     border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
     box-shadow: var(--shadow-style, 0 12px 24px rgba(15, 23, 42, 0.35));
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
     transition: transform var(--animation-speed, 0.3s) ease, box-shadow var(--animation-speed, 0.3s) ease;
     color: var(--text_color, #e2e8f0);
     background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 40%);
+    overflow: hidden;
   }
 
   .story-card:hover {
     transform: translateY(-6px);
     box-shadow: 0 20px 40px rgba(14, 165, 233, 0.25);
+  }
+
+  .card-cover-image {
+    width: 100%;
+    height: 180px;
+    overflow: hidden;
+  }
+
+  .card-cover-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .card-content {
+    padding: 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1;
   }
 
   .story-card h2 {

@@ -27,7 +27,7 @@ from config_store import apply_config_updates, get_runtime_config
 from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
-from story_generator import spawn_new_story
+from story_generator import generate_cover_image, spawn_new_story
 from websocket_manager import ws_manager
 
 settings = get_settings()
@@ -114,6 +114,7 @@ class StorySummary(BaseModel):
     chapter_count: int
     total_tokens: int | None
     theme_json: dict[str, Any] | None
+    cover_image_url: str | None
 
     @classmethod
     def from_model(cls, story: Story) -> "StorySummary":
@@ -127,6 +128,7 @@ class StorySummary(BaseModel):
             chapter_count=story.chapter_count,
             total_tokens=story.total_tokens,
             theme_json=story.theme_json,
+            cover_image_url=story.cover_image_url,
         )
 
 
@@ -261,6 +263,16 @@ async def kill_story(
         story.status = "completed"
         story.completed_at = datetime.utcnow()
         story.completion_reason = reason
+        
+        # Generate cover image for the completed story
+        try:
+            cover_url = await generate_cover_image(story.title, story.premise)
+            if cover_url:
+                story.cover_image_url = cover_url
+                logger.info("Cover image generated for manually killed story %s", story.title)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
+        
         await session.commit()
 
         if settings.enable_websocket:
@@ -269,6 +281,7 @@ async def kill_story(
                     "type": "story_completed",
                     "story_id": str(story.id),
                     "reason": reason,
+                    "cover_image_url": story.cover_image_url,
                 }
             )
         logger.info("Story %s killed manually: %s", story.title, reason)
@@ -384,6 +397,55 @@ async def admin_spawn_story(session: SessionDep) -> dict[str, Any]:
     if not story_obj:
         raise HTTPException(status_code=500, detail="Failed to spawn story")
     return StoryDetail.from_model(story_obj).model_dump()
+
+
+@app.post("/api/admin/backfill-cover-images")
+async def admin_backfill_cover_images(session: SessionDep) -> dict[str, Any]:
+    """Generate cover images for all completed stories without one."""
+    stmt = select(Story).where(
+        Story.status == "completed",
+        Story.cover_image_url.is_(None)
+    )
+    
+    stories = (await session.execute(stmt)).scalars().all()
+    
+    if not stories:
+        return {
+            "message": "No stories need cover images",
+            "processed": 0,
+            "success": 0,
+            "failed": 0
+        }
+    
+    logger.info("Found %d completed stories without cover images", len(stories))
+    
+    success_count = 0
+    failed_count = 0
+    
+    for story in stories:
+        logger.info("Generating cover image for story: %s", story.title)
+        try:
+            cover_url = await generate_cover_image(story.title, story.premise)
+            if cover_url:
+                story.cover_image_url = cover_url
+                await session.flush()
+                success_count += 1
+                logger.info("✓ Cover image generated for: %s", story.title)
+            else:
+                failed_count += 1
+                logger.warning("✗ No URL returned for: %s", story.title)
+        except Exception as exc:
+            failed_count += 1
+            logger.exception("Failed to generate cover for %s: %s", story.title, exc)
+    
+    await session.commit()
+    
+    return {
+        "message": "Backfill complete",
+        "processed": len(stories),
+        "success": success_count,
+        "failed": failed_count
+    }
 
 
 @app.exception_handler(NoResultFound)

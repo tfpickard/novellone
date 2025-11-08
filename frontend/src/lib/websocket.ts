@@ -1,6 +1,6 @@
 export type StorySocketMessage =
   | { type: 'new_chapter'; story_id: string; chapter: any }
-  | { type: 'story_completed'; story_id: string; reason: string };
+  | { type: 'story_completed'; story_id: string; reason: string; cover_image_url?: string };
 
 export function createStorySocket(onMessage: (message: StorySocketMessage) => void) {
   let endpoint = import.meta.env.VITE_PUBLIC_WS_URL as string | undefined;

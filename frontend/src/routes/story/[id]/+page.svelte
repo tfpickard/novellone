@@ -33,7 +33,8 @@
       story = {
         ...story,
         status: 'completed',
-        completion_reason: message.reason
+        completion_reason: message.reason,
+        cover_image_url: message.cover_image_url || story.cover_image_url
       };
     }
   }
@@ -73,13 +74,20 @@
 
 <div class="page-container story-detail" bind:this={container}>
   <header class="story-header">
-    <div>
-      <span class="status" data-live={story.status === 'active'}>{story.status}</span>
-      <h1>{story.title}</h1>
-      <p class="premise">{story.premise}</p>
-      <div class="badges">
-        {#if theme?.aesthetic}<span class="badge">{theme.aesthetic}</span>{/if}
-        {#if theme?.mood}<span class="badge">{theme.mood}</span>{/if}
+    <div class="header-content">
+      {#if story.cover_image_url && story.status === 'completed'}
+        <div class="cover-image-wrapper">
+          <img src={story.cover_image_url} alt="{story.title} cover" class="cover-image" />
+        </div>
+      {/if}
+      <div class="header-text">
+        <span class="status" data-live={story.status === 'active'}>{story.status}</span>
+        <h1>{story.title}</h1>
+        <p class="premise">{story.premise}</p>
+        <div class="badges">
+          {#if theme?.aesthetic}<span class="badge">{theme.aesthetic}</span>{/if}
+          {#if theme?.mood}<span class="badge">{theme.mood}</span>{/if}
+        </div>
       </div>
     </div>
     <div class="side-panel">
@@ -140,6 +148,30 @@
     align-items: flex-start;
     gap: 2rem;
     margin-bottom: 2rem;
+  }
+
+  .header-content {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+    flex: 1;
+  }
+
+  .header-text {
+    flex: 1;
+  }
+
+  .cover-image-wrapper {
+    flex-shrink: 0;
+  }
+
+  .cover-image {
+    width: 200px;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    border: 2px solid var(--accent-color, rgba(125, 211, 252, 0.5));
   }
 
   .side-panel {
@@ -297,6 +329,16 @@
   @media (max-width: 900px) {
     .story-header {
       flex-direction: column;
+    }
+
+    .header-content {
+      flex-direction: column;
+    }
+
+    .cover-image {
+      width: 100%;
+      height: auto;
+      max-width: 300px;
     }
 
     .meta {

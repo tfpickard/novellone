@@ -25,6 +25,7 @@ class Story(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     theme_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_chapter_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cover_image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     chapters: Mapped[list["Chapter"]] = relationship(
         back_populates="story", cascade="all, delete-orphan", order_by="Chapter.chapter_number"

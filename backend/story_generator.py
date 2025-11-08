@@ -138,23 +138,29 @@ async def generate_story_premise() -> dict[str, Any]:
         "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
         'Examples: "Von Neumann probes develop culture", "Time dilation prison", "Sentient Dyson sphere"'
     )
-    text, _ = await _call_openai(
-        _settings.openai_premise_model,
-        prompt,
-        max_tokens=_settings.openai_max_tokens_premise,
-        temperature=_settings.openai_temperature_premise,
-    )
-    parsed = _safe_json_loads(text)
-    if parsed is not None:
-        return parsed
-    logger.warning("Premise response not JSON, wrapping text")
-    return {
-        "title": "Untitled Expedition",
-        "premise": text.strip(),
-        "themes": [],
-        "setting": "Unknown",
-        "central_conflict": "Unclear",
-    }
+    try:
+        text, _ = await _call_openai(
+            _settings.openai_premise_model,
+            prompt,
+            max_tokens=_settings.openai_max_tokens_premise,
+            temperature=_settings.openai_temperature_premise,
+        )
+        logger.debug("Raw premise response: %s", text[:200])
+        parsed = _safe_json_loads(text)
+        if parsed is not None:
+            logger.info("Successfully generated premise: %s", parsed.get("title", "Unknown"))
+            return parsed
+        logger.warning("Premise response not JSON, wrapping text. Response: %s", text[:500])
+        return {
+            "title": "Untitled Expedition",
+            "premise": text.strip(),
+            "themes": [],
+            "setting": "Unknown",
+            "central_conflict": "Unclear",
+        }
+    except Exception as exc:
+        logger.exception("Failed to generate premise: %s", exc)
+        raise
 
 
 async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
@@ -279,6 +285,46 @@ async def generate_chapter(
     }
 
 
+async def generate_cover_image(story_title: str, story_premise: str) -> str:
+    """Generate a cover image for a completed story using DALL-E.
+    
+    Returns the URL of the generated image.
+    """
+    # Create a concise, visual prompt for DALL-E based on the story
+    prompt = (
+        f"Book cover art for a science fiction story titled '{story_title}'. "
+        f"Story premise: {story_premise[:200]}... "
+        "Create a striking, atmospheric cover image with a cinematic composition. "
+        "Style: modern sci-fi book cover, professional, dramatic lighting, no text."
+    )
+    
+    logger.info("Generating cover image for story: %s", story_title)
+    logger.debug("Cover image prompt: %s", prompt[:300])
+    
+    try:
+        response = await _client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        
+        if response.data and len(response.data) > 0:
+            image_url = response.data[0].url
+            logger.info("✓ Successfully generated cover image for: %s - URL: %s", story_title, image_url[:50])
+            return image_url
+        else:
+            logger.warning("✗ No image data returned for story: %s", story_title)
+            return ""
+    except OpenAIError as exc:
+        logger.exception("✗ OpenAI error generating cover image for %s: %s", story_title, exc)
+        return ""
+    except Exception as exc:
+        logger.exception("✗ Unexpected error generating cover image for %s: %s", story_title, exc)
+        return ""
+
+
 async def spawn_new_story() -> dict[str, Any]:
     premise_data = await generate_story_premise()
     title = premise_data.get("title") or "Untitled Expedition"
@@ -296,5 +342,6 @@ __all__ = [
     "generate_story_premise",
     "generate_story_theme",
     "generate_chapter",
+    "generate_cover_image",
     "spawn_new_story",
 ]
