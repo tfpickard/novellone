@@ -10,6 +10,7 @@ from config import get_settings
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
 from story_evaluator import evaluate_story
+from story_completion import ensure_story_completion_assets
 from story_generator import generate_chapter, spawn_new_story
 from websocket_manager import ws_manager
 
@@ -159,6 +160,7 @@ class BackgroundWorker:
             story.status = "completed"
             story.completed_at = datetime.utcnow()
             story.completion_reason = reason
+            await ensure_story_completion_assets(session, story)
             await session.flush()
             if settings.enable_websocket:
                 await ws_manager.broadcast(
@@ -166,6 +168,8 @@ class BackgroundWorker:
                         "type": "story_completed",
                         "story_id": str(story.id),
                         "reason": reason,
+                        "summary": story.summary,
+                        "cover_art_url": story.cover_art_url,
                     }
                 )
             logger.info("Story %s completed: %s", story.title, reason)

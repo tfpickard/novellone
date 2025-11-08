@@ -14,6 +14,7 @@ class AppSettings(BaseSettings):
     openai_model: str = Field(..., alias="OPENAI_MODEL")
     openai_premise_model: str = Field(..., alias="OPENAI_PREMISE_MODEL")
     openai_eval_model: str = Field(..., alias="OPENAI_EVAL_MODEL")
+    openai_image_model: str = Field("gpt-image-1", alias="OPENAI_IMAGE_MODEL")
     openai_max_tokens_chapter: int = Field(..., alias="OPENAI_MAX_TOKENS_CHAPTER")
     openai_max_tokens_premise: int = Field(..., alias="OPENAI_MAX_TOKENS_PREMISE")
     openai_max_tokens_eval: int = Field(..., alias="OPENAI_MAX_TOKENS_EVAL")

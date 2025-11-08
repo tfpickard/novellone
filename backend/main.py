@@ -26,6 +26,7 @@ from config import AppSettings, get_settings
 from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
+from story_completion import ensure_story_completion_assets
 from story_generator import spawn_new_story
 from websocket_manager import ws_manager
 
@@ -116,6 +117,8 @@ class StorySummary(BaseModel):
     chapter_count: int
     total_tokens: int | None
     theme_json: dict[str, Any] | None
+    summary: str | None = None
+    cover_art_url: str | None = None
 
     @classmethod
     def from_model(cls, story: Story) -> "StorySummary":
@@ -129,6 +132,8 @@ class StorySummary(BaseModel):
             chapter_count=story.chapter_count,
             total_tokens=story.total_tokens,
             theme_json=story.theme_json,
+            summary=story.summary,
+            cover_art_url=story.cover_art_url,
         )
 
 
@@ -249,6 +254,7 @@ async def kill_story(
         story.status = "completed"
         story.completed_at = datetime.utcnow()
         story.completion_reason = reason
+        await ensure_story_completion_assets(session, story)
         await session.commit()
 
         if settings.enable_websocket:
@@ -257,13 +263,16 @@ async def kill_story(
                     "type": "story_completed",
                     "story_id": str(story.id),
                     "reason": reason,
+                    "summary": story.summary,
+                    "cover_art_url": story.cover_art_url,
                 }
             )
         logger.info("Story %s killed manually: %s", story.title, reason)
     else:
         if story.completion_reason != reason:
             story.completion_reason = reason
-            await session.commit()
+        await ensure_story_completion_assets(session, story)
+        await session.commit()
         logger.info("Kill requested for already completed story %s", story.title)
 
     return await get_story(story_id, session)
