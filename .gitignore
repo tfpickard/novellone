@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+.env.local
+.env.*.local
+node_modules/
+frontend/.svelte-kit/
+frontend/build/
+backend/.venv/
+.vscode/
+.DS_Store
+.idea/
+pgdata/
