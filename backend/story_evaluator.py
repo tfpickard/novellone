@@ -15,7 +15,8 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str, Any]:
     chapter_summaries = "\n\n".join(
-        f"Chapter {c.chapter_number}: {c.content[:4000]}" for c in chapters[-_settings.context_window_chapters :]
+        f"Chapter {c.chapter_number}: {c.content[:4000]}"
+        for c in chapters[-_settings.context_window_chapters :]
     )
     prompt = (
         f"Story: {story.title}\nPremise: {story.premise}\n"
@@ -30,24 +31,24 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
             model=_settings.openai_eval_model,
             input=prompt,
             max_output_tokens=_settings.openai_max_tokens_eval,
-            temperature=_settings.openai_temperature_eval,
+            # temperature=_settings.openai_temperature_eval,
         )
     except OpenAIError as exc:
         logger.exception("OpenAI evaluation failed: %s", exc)
         raise
 
-    text = getattr(response, 'output_text', None)
+    text = getattr(response, "output_text", None)
     if text is None:
-        output = getattr(response, 'output', None)
+        output = getattr(response, "output", None)
         if not output:
-            raise RuntimeError('Empty evaluation response')
-        if output[0].type == 'message':
+            raise RuntimeError("Empty evaluation response")
+        if output[0].type == "message":
             text = output[0].content[0].text
         else:
-            text = ''.join(
-                part.content[0].text if getattr(part, 'type', None) == 'message' else ''
+            text = "".join(
+                part.content[0].text if getattr(part, "type", None) == "message" else ""
                 for part in output
-                if hasattr(part, 'content')
+                if hasattr(part, "content")
             )
 
     try:

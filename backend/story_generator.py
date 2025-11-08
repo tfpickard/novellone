@@ -14,42 +14,44 @@ _settings = get_settings()
 _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 
-async def _call_openai(model: str, prompt: str, *, max_tokens: int, temperature: float) -> str:
+async def _call_openai(
+    model: str, prompt: str, *, max_tokens: int, temperature: float
+) -> str:
     try:
         response = await _client.responses.create(
             model=model,
             input=prompt,
             max_output_tokens=max_tokens,
-            temperature=temperature,
+            # temperature=temperature,
         )
     except OpenAIError as exc:
         logger.exception("OpenAI request failed: %s", exc)
         raise
 
-    text = getattr(response, 'output_text', None)
+    text = getattr(response, "output_text", None)
     if text:
         return text
 
-    output = getattr(response, 'output', None)
+    output = getattr(response, "output", None)
     if not output:
-        raise RuntimeError('OpenAI response was empty')
+        raise RuntimeError("OpenAI response was empty")
 
-    if output[0].type == 'message':
+    if output[0].type == "message":
         return output[0].content[0].text
-    return ''.join(
-        part.content[0].text if getattr(part, 'type', None) == 'message' else ''
+    return "".join(
+        part.content[0].text if getattr(part, "type", None) == "message" else ""
         for part in output
-        if hasattr(part, 'content')
+        if hasattr(part, "content")
     )
 
 
 async def generate_story_premise() -> dict[str, Any]:
     prompt = (
         "Generate a unique, compelling science fiction story premise. Be creative and "
-        "explore unusual concepts.\n"
-        "Include a central character named Tom who is an engineer integral to the story.\n"
+        "explore unusual, surreal and disturbing concepts.\n"
+        "Include a character named Tom who is an engineer to the story. He can be a major or minor character.\n"
         "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
-        "Examples: \"Von Neumann probes develop culture\", \"Time dilation prison\", \"Sentient Dyson sphere\""
+        'Examples: "Von Neumann probes develop culture", "Time dilation prison", "Sentient Dyson sphere"'
     )
     text = await _call_openai(
         _settings.openai_premise_model,
@@ -115,7 +117,8 @@ async def generate_chapter(
     chapter_number: int,
 ) -> dict[str, Any]:
     context = "\n\n".join(
-        f"Chapter {chapter.chapter_number}: {chapter.content}" for chapter in recent_chapters
+        f"Chapter {chapter.chapter_number}: {chapter.content}"
+        for chapter in recent_chapters
     )
     prompt = (
         f"Story: {story.title}\n"

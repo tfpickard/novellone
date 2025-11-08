@@ -5,7 +5,15 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -179,10 +187,10 @@ async def list_stories(
         count_stmt = count_stmt.where(Story.status == status)
     total = (await session.execute(count_stmt)).scalar_one()
     stories = (
-        await session.execute(
-            stmt.offset((page - 1) * page_size).limit(page_size)
-        )
-    ).scalars().all()
+        (await session.execute(stmt.offset((page - 1) * page_size).limit(page_size)))
+        .scalars()
+        .all()
+    )
     return {
         "total": total,
         "page": page,
@@ -220,7 +228,12 @@ async def get_story_theme(story_id: uuid.UUID, session: SessionDep) -> dict[str,
 
 @app.post("/api/stories", status_code=201)
 async def create_story(payload: StoryCreate, session: SessionDep) -> dict[str, Any]:
-    story = Story(title=payload.title, premise=payload.premise, theme_json=payload.theme_json, status="active")
+    story = Story(
+        title=payload.title,
+        premise=payload.premise,
+        theme_json=payload.theme_json,
+        status="active",
+    )
     session.add(story)
     await session.flush()
     stmt = (
@@ -236,13 +249,21 @@ async def create_story(payload: StoryCreate, session: SessionDep) -> dict[str, A
 
 @app.get("/api/stats")
 async def get_stats(session: SessionDep) -> dict[str, Any]:
-    total_stories = (await session.execute(select(func.count()).select_from(Story))).scalar_one()
-    total_chapters = (await session.execute(select(func.count()).select_from(Chapter))).scalar_one()
+    total_stories = (
+        await session.execute(select(func.count()).select_from(Story))
+    ).scalar_one()
+    total_chapters = (
+        await session.execute(select(func.count()).select_from(Chapter))
+    ).scalar_one()
     active_stories = (
-        await session.execute(select(func.count()).select_from(Story).where(Story.status == "active"))
+        await session.execute(
+            select(func.count()).select_from(Story).where(Story.status == "active")
+        )
     ).scalar_one()
     completed_stories = (
-        await session.execute(select(func.count()).select_from(Story).where(Story.status == "completed"))
+        await session.execute(
+            select(func.count()).select_from(Story).where(Story.status == "completed")
+        )
     ).scalar_one()
     average_chapters = 0.0
     if total_stories:
@@ -254,10 +275,14 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         await session.execute(select(func.sum(Story.total_tokens)))
     ).scalar_one()
     recent_activity = (
-        await session.execute(
-            select(Chapter).order_by(Chapter.created_at.desc()).limit(10)
+        (
+            await session.execute(
+                select(Chapter).order_by(Chapter.created_at.desc()).limit(10)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "total_stories": total_stories,
         "total_chapters": total_chapters,
@@ -265,7 +290,9 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         "completed_stories": completed_stories,
         "average_chapters_per_story": average_chapters,
         "total_tokens_used": token_usage or 0,
-        "recent_activity": [ChapterRead.from_model(c).model_dump() for c in recent_activity],
+        "recent_activity": [
+            ChapterRead.from_model(c).model_dump() for c in recent_activity
+        ],
     }
 
 
@@ -308,5 +335,9 @@ async def admin_spawn_story(session: SessionDep) -> dict[str, Any]:
 async def handle_not_found(_: Request, exc: NoResultFound) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
+
+from debug_routes import router as debug_router
+
+app.include_router(debug_router)
 
 __all__ = ["app"]
