@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,7 +42,7 @@ class AppSettings(BaseSettings):
     )
     enable_websocket: bool = Field(True, alias="ENABLE_WEBSOCKET")
 
-    public_api_url: str | None = Field(default=None, alias="PUBLIC_API_URL")
+    public_api_url: Annotated[str | None, Field(alias="PUBLIC_API_URL")] = None
 
     @property
     def evaluation_weights(self) -> "EvaluationWeights":
