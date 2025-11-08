@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
@@ -68,4 +69,12 @@ class StoryEvaluation(Base):
     story: Mapped[Story] = relationship(back_populates="evaluations")
 
 
-__all__ = ["Base", "Story", "Chapter", "StoryEvaluation"]
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+__all__ = ["Base", "Story", "Chapter", "StoryEvaluation", "SystemConfig"]
