@@ -20,9 +20,20 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./logs/backend:/app/logs
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - .pytest_cache/
+        - action: rebuild
+          path: ./backend/requirements.txt
 
   frontend:
     build: ./frontend
@@ -33,6 +44,13 @@ services:
       - backend
     ports:
       - "3000:3000"
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: rebuild
+          path: ./frontend/package.json
 
 volumes:
   pgdata:

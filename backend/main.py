@@ -60,6 +60,10 @@ class ChapterRead(BaseModel):
     tokens_used: int | None = None
     generation_time_ms: int | None = None
     model_used: str | None = None
+    absurdity: float | None = None
+    surrealism: float | None = None
+    ridiculousness: float | None = None
+    insanity: float | None = None
 
     @classmethod
     def from_model(cls, chapter: Chapter) -> "ChapterRead":
@@ -71,6 +75,10 @@ class ChapterRead(BaseModel):
             tokens_used=chapter.tokens_used,
             generation_time_ms=chapter.generation_time_ms,
             model_used=chapter.model_used,
+            absurdity=chapter.absurdity,
+            surrealism=chapter.surrealism,
+            ridiculousness=chapter.ridiculousness,
+            insanity=chapter.insanity,
         )
 
 
@@ -115,6 +123,14 @@ class StorySummary(BaseModel):
     total_tokens: int | None
     theme_json: dict[str, Any] | None
     cover_image_url: str | None
+    absurdity_initial: float = 0.1
+    surrealism_initial: float = 0.1
+    ridiculousness_initial: float = 0.1
+    insanity_initial: float = 0.1
+    absurdity_increment: float = 0.05
+    surrealism_increment: float = 0.05
+    ridiculousness_increment: float = 0.05
+    insanity_increment: float = 0.05
 
     @classmethod
     def from_model(cls, story: Story) -> "StorySummary":
@@ -129,6 +145,14 @@ class StorySummary(BaseModel):
             total_tokens=story.total_tokens,
             theme_json=story.theme_json,
             cover_image_url=story.cover_image_url,
+            absurdity_initial=story.absurdity_initial,
+            surrealism_initial=story.surrealism_initial,
+            ridiculousness_initial=story.ridiculousness_initial,
+            insanity_initial=story.insanity_initial,
+            absurdity_increment=story.absurdity_increment,
+            surrealism_increment=story.surrealism_increment,
+            ridiculousness_increment=story.ridiculousness_increment,
+            insanity_increment=story.insanity_increment,
         )
 
 
@@ -357,6 +381,21 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         .scalars()
         .all()
     )
+    
+    # Calculate average chaos parameters
+    avg_absurdity = (
+        await session.execute(select(func.avg(Chapter.absurdity)))
+    ).scalar_one() or 0.0
+    avg_surrealism = (
+        await session.execute(select(func.avg(Chapter.surrealism)))
+    ).scalar_one() or 0.0
+    avg_ridiculousness = (
+        await session.execute(select(func.avg(Chapter.ridiculousness)))
+    ).scalar_one() or 0.0
+    avg_insanity = (
+        await session.execute(select(func.avg(Chapter.insanity)))
+    ).scalar_one() or 0.0
+    
     return {
         "total_stories": total_stories,
         "total_chapters": total_chapters,
@@ -364,6 +403,10 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         "completed_stories": completed_stories,
         "average_chapters_per_story": average_chapters,
         "total_tokens_used": token_usage or 0,
+        "average_absurdity": float(avg_absurdity),
+        "average_surrealism": float(avg_surrealism),
+        "average_ridiculousness": float(avg_ridiculousness),
+        "average_insanity": float(avg_insanity),
         "recent_activity": [
             ChapterRead.from_model(c).model_dump() for c in recent_activity
         ],
@@ -423,6 +466,14 @@ async def admin_spawn_story(session: SessionDep) -> dict[str, Any]:
         premise=payload["premise"],
         status="active",
         theme_json=payload.get("theme_json"),
+        absurdity_initial=payload.get("absurdity_initial", 0.1),
+        surrealism_initial=payload.get("surrealism_initial", 0.1),
+        ridiculousness_initial=payload.get("ridiculousness_initial", 0.1),
+        insanity_initial=payload.get("insanity_initial", 0.1),
+        absurdity_increment=payload.get("absurdity_increment", 0.05),
+        surrealism_increment=payload.get("surrealism_increment", 0.05),
+        ridiculousness_increment=payload.get("ridiculousness_increment", 0.05),
+        insanity_increment=payload.get("insanity_increment", 0.05),
     )
     session.add(story)
     await session.flush()

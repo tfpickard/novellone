@@ -166,6 +166,10 @@ class BackgroundWorker:
                     "tokens_used": chapter.tokens_used,
                     "generation_time_ms": chapter.generation_time_ms,
                     "model_used": chapter.model_used,
+                    "absurdity": chapter.absurdity,
+                    "surrealism": chapter.surrealism,
+                    "ridiculousness": chapter.ridiculousness,
+                    "insanity": chapter.insanity,
                 },
             })
         logger.info(
@@ -281,6 +285,14 @@ class BackgroundWorker:
             premise=payload["premise"],
             status="active",
             theme_json=payload.get("theme_json"),
+            absurdity_initial=payload.get("absurdity_initial", 0.1),
+            surrealism_initial=payload.get("surrealism_initial", 0.1),
+            ridiculousness_initial=payload.get("ridiculousness_initial", 0.1),
+            insanity_initial=payload.get("insanity_initial", 0.1),
+            absurdity_increment=payload.get("absurdity_increment", 0.05),
+            surrealism_increment=payload.get("surrealism_increment", 0.05),
+            ridiculousness_increment=payload.get("ridiculousness_increment", 0.05),
+            insanity_increment=payload.get("insanity_increment", 0.05),
         )
         session.add(story)
         await session.flush()

@@ -130,6 +130,38 @@
           <strong>{story.total_tokens ?? 0}</strong>
         </div>
       </aside>
+      
+      <aside class="chaos-params">
+        <h3>Chaos Parameters</h3>
+        <div class="param">
+          <span>Absurdity</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.absurdity_initial * 100).toFixed(0)}%; background: #f59e0b;"></div>
+          </div>
+          <span class="param-value">{story.absurdity_initial.toFixed(2)} +{story.absurdity_increment.toFixed(2)}/ch</span>
+        </div>
+        <div class="param">
+          <span>Surrealism</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.surrealism_initial * 100).toFixed(0)}%; background: #8b5cf6;"></div>
+          </div>
+          <span class="param-value">{story.surrealism_initial.toFixed(2)} +{story.surrealism_increment.toFixed(2)}/ch</span>
+        </div>
+        <div class="param">
+          <span>Ridiculousness</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.ridiculousness_initial * 100).toFixed(0)}%; background: #ec4899;"></div>
+          </div>
+          <span class="param-value">{story.ridiculousness_initial.toFixed(2)} +{story.ridiculousness_increment.toFixed(2)}/ch</span>
+        </div>
+        <div class="param">
+          <span>Insanity</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.insanity_initial * 100).toFixed(0)}%; background: #ef4444;"></div>
+          </div>
+          <span class="param-value">{story.insanity_initial.toFixed(2)} +{story.insanity_increment.toFixed(2)}/ch</span>
+        </div>
+      </aside>
       {#if story.status === 'active'}
         <button class="kill-button" on:click={handleKill} disabled={killing}>
           {killing ? 'Ending…' : 'Kill Story'}
@@ -156,8 +188,32 @@
   <section class="chapters">
     {#each story.chapters as chapter (chapter.id)}
       <article class="chapter">
-        <h2>Chapter {chapter.chapter_number}</h2>
-        <time>{new Date(chapter.created_at).toLocaleString()}</time>
+        <div class="chapter-header">
+          <div>
+            <h2>Chapter {chapter.chapter_number}</h2>
+            <time>{new Date(chapter.created_at).toLocaleString()}</time>
+          </div>
+          {#if chapter.absurdity !== null && chapter.absurdity !== undefined}
+            <div class="chapter-chaos">
+              <div class="chaos-badge" style="background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5);">
+                <span class="chaos-label">A</span>
+                <span class="chaos-value">{chapter.absurdity.toFixed(2)}</span>
+              </div>
+              <div class="chaos-badge" style="background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5);">
+                <span class="chaos-label">S</span>
+                <span class="chaos-value">{chapter.surrealism?.toFixed(2) ?? 'N/A'}</span>
+              </div>
+              <div class="chaos-badge" style="background: rgba(236, 72, 153, 0.2); border-color: rgba(236, 72, 153, 0.5);">
+                <span class="chaos-label">R</span>
+                <span class="chaos-value">{chapter.ridiculousness?.toFixed(2) ?? 'N/A'}</span>
+              </div>
+              <div class="chaos-badge" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);">
+                <span class="chaos-label">I</span>
+                <span class="chaos-value">{chapter.insanity?.toFixed(2) ?? 'N/A'}</span>
+              </div>
+            </div>
+          {/if}
+        </div>
         <p>{chapter.content}</p>
       </article>
     {/each}
@@ -369,8 +425,17 @@
     border: 1px solid rgba(148, 163, 184, 0.2);
   }
 
+  .chapter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
   .chapter h2 {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.5rem;
     font-family: var(--font-heading, 'Orbitron', sans-serif);
     color: var(--accent-color, #f97316);
   }
@@ -379,7 +444,79 @@
     display: block;
     font-size: 0.8rem;
     opacity: 0.7;
-    margin-bottom: 1rem;
+  }
+
+  .chapter-chaos {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .chaos-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 0.75rem;
+  }
+
+  .chaos-label {
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
+  .chaos-value {
+    font-weight: 700;
+  }
+
+  .chaos-params {
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 16px;
+    padding: 1.2rem 1.5rem;
+  }
+
+  .chaos-params h3 {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.8;
+  }
+
+  .param {
+    margin-bottom: 0.75rem;
+  }
+
+  .param:last-child {
+    margin-bottom: 0;
+  }
+
+  .param > span:first-child {
+    display: block;
+    font-size: 0.75rem;
+    margin-bottom: 0.3rem;
+    opacity: 0.7;
+  }
+
+  .param-bar {
+    background: rgba(255, 255, 255, 0.1);
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 0.3rem;
+  }
+
+  .param-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
+  .param-value {
+    display: block;
+    font-size: 0.7rem;
+    opacity: 0.6;
   }
 
   .chapter p {

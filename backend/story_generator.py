@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 import re
 import time
 from typing import Any, Sequence
@@ -44,7 +45,7 @@ async def _call_openai(
         else:
             effective_max_tokens = max_tokens
 
-        # Build request parameters - use max_completion_tokens for newer models
+        # Build request parameters
         request_params = {
             "model": model,
             "messages": [
@@ -56,15 +57,15 @@ async def _call_openai(
             ],
         }
 
-        # Try max_completion_tokens first (for newer models like o1), fallback to max_tokens
-        try:
+        # Use max_completion_tokens for reasoning models (o1, gpt-5), max_tokens for others
+        if is_reasoning_model:
             request_params["max_completion_tokens"] = effective_max_tokens
-        except Exception:
+        else:
             request_params["max_tokens"] = effective_max_tokens
 
-        # Only add temperature for non-gpt-5 models
-        # GPT-5 models don't support temperature parameter at all
-        if not is_gpt5_model:
+        # Only add temperature for non-gpt-5 and non-reasoning models
+        # GPT-5 and o1 models don't support temperature parameter
+        if not is_gpt5_model and not is_reasoning_model:
             request_params["temperature"] = temperature
 
         response = await _client.chat.completions.create(**request_params)
@@ -223,6 +224,25 @@ def _safe_json_loads(text: str) -> dict[str, Any] | None:
 
 
 async def generate_story_premise() -> dict[str, Any]:
+    # Generate random chaos parameters for this story
+    absurdity_initial = random.uniform(0.05, 0.25)
+    surrealism_initial = random.uniform(0.05, 0.25)
+    ridiculousness_initial = random.uniform(0.05, 0.25)
+    insanity_initial = random.uniform(0.05, 0.25)
+    
+    absurdity_increment = random.uniform(0.02, 0.15)
+    surrealism_increment = random.uniform(0.02, 0.15)
+    ridiculousness_increment = random.uniform(0.02, 0.15)
+    insanity_increment = random.uniform(0.02, 0.15)
+    
+    logger.info(
+        "Generated chaos parameters: absurdity=%.3f+%.3f, surrealism=%.3f+%.3f, ridiculousness=%.3f+%.3f, insanity=%.3f+%.3f",
+        absurdity_initial, absurdity_increment,
+        surrealism_initial, surrealism_increment,
+        ridiculousness_initial, ridiculousness_increment,
+        insanity_initial, insanity_increment,
+    )
+    
     # More explicit prompt with stronger instructions
     prompt = (
         "Generate a unique, creative science fiction story premise.\n\n"
@@ -287,6 +307,15 @@ async def generate_story_premise() -> dict[str, Any]:
 
                 if title and premise:
                     logger.info("✓ Successfully generated premise: '%s'", title)
+                    # Add chaos parameters to the response
+                    parsed["absurdity_initial"] = absurdity_initial
+                    parsed["surrealism_initial"] = surrealism_initial
+                    parsed["ridiculousness_initial"] = ridiculousness_initial
+                    parsed["insanity_initial"] = insanity_initial
+                    parsed["absurdity_increment"] = absurdity_increment
+                    parsed["surrealism_increment"] = surrealism_increment
+                    parsed["ridiculousness_increment"] = ridiculousness_increment
+                    parsed["insanity_increment"] = insanity_increment
                     return parsed
                 else:
                     logger.warning(
@@ -350,6 +379,14 @@ async def generate_story_premise() -> dict[str, Any]:
                 "themes": [],
                 "setting": "Unknown",
                 "central_conflict": "Unclear",
+                "absurdity_initial": absurdity_initial,
+                "surrealism_initial": surrealism_initial,
+                "ridiculousness_initial": ridiculousness_initial,
+                "insanity_initial": insanity_initial,
+                "absurdity_increment": absurdity_increment,
+                "surrealism_increment": surrealism_increment,
+                "ridiculousness_increment": ridiculousness_increment,
+                "insanity_increment": insanity_increment,
             }
         except Exception as exc:
             logger.exception(
@@ -369,6 +406,14 @@ async def generate_story_premise() -> dict[str, Any]:
         "themes": [],
         "setting": "Unknown",
         "central_conflict": "Unclear",
+        "absurdity_initial": absurdity_initial,
+        "surrealism_initial": surrealism_initial,
+        "ridiculousness_initial": ridiculousness_initial,
+        "insanity_initial": insanity_initial,
+        "absurdity_increment": absurdity_increment,
+        "surrealism_increment": surrealism_increment,
+        "ridiculousness_increment": ridiculousness_increment,
+        "insanity_increment": insanity_increment,
     }
 
 
@@ -456,20 +501,50 @@ async def generate_chapter(
     *,
     chapter_number: int,
 ) -> dict[str, Any]:
+    # Calculate expected chaos parameters for this chapter
+    expected_absurdity = story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
+    expected_surrealism = story.surrealism_initial + (chapter_number - 1) * story.surrealism_increment
+    expected_ridiculousness = story.ridiculousness_initial + (chapter_number - 1) * story.ridiculousness_increment
+    expected_insanity = story.insanity_initial + (chapter_number - 1) * story.insanity_increment
+    
+    logger.info(
+        "Chapter %d chaos parameters: absurdity=%.3f, surrealism=%.3f, ridiculousness=%.3f, insanity=%.3f",
+        chapter_number,
+        expected_absurdity,
+        expected_surrealism,
+        expected_ridiculousness,
+        expected_insanity,
+    )
+    
     context = "\n\n".join(
         f"Chapter {chapter.chapter_number}: {chapter.content}"
         for chapter in recent_chapters
     )
+    
     prompt = (
         f"Story: {story.title}\n"
         f"Premise: {story.premise}\n"
-        f"Previous chapters: {context or 'None yet.'}\n"
+        f"Previous chapters: {context or 'None yet.'}\n\n"
         f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
         "Aim for 600-900 words and ensure the chapter forms a coherent arc with a beginning, middle, and end."
-        " Do not end mid-sentence; conclude with a strong beat or hook."
-        " Make this chapter 10%<n<25% more ridiculous and/or absurd and/or surreal than the previous chapter. "
-        "If this is the first chapter, pick a number 5%<n<25% and use it as a coefficient of absurdity."
+        " Do not end mid-sentence; conclude with a strong beat or hook.\n\n"
+        f"CHAOS PARAMETERS for this chapter (scale 0.0-1.0):\n"
+        f"- Absurdity: {expected_absurdity:.3f} (logical inconsistencies, bizarre situations)\n"
+        f"- Surrealism: {expected_surrealism:.3f} (dreamlike, symbolic, reality-bending elements)\n"
+        f"- Ridiculousness: {expected_ridiculousness:.3f} (comedic absurdity, over-the-top scenarios)\n"
+        f"- Insanity: {expected_insanity:.3f} (chaotic, unhinged, breaking conventions)\n\n"
+        "Write the chapter with these parameters in mind, making it progressively more chaotic as specified.\n\n"
+        "After writing the chapter, respond with ONLY valid JSON in this exact structure:\n"
+        "{\n"
+        '  "chapter_content": "Your full chapter text here...",\n'
+        f'  "absurdity": {expected_absurdity:.3f},\n'
+        f'  "surrealism": {expected_surrealism:.3f},\n'
+        f'  "ridiculousness": {expected_ridiculousness:.3f},\n'
+        f'  "insanity": {expected_insanity:.3f}\n'
+        "}\n\n"
+        "Return the EXACT chaos parameter values provided above in your response."
     )
+    
     start = time.perf_counter()
     text, usage = await _call_openai(
         _settings.openai_model,
@@ -477,18 +552,48 @@ async def generate_chapter(
         max_tokens=_settings.openai_max_tokens_chapter,
         temperature=_settings.openai_temperature_chapter,
     )
-    if _needs_conclusion(text):
-        text = await _complete_chapter(story, text)
+    
+    # Try to parse JSON response
+    parsed = _safe_json_loads(text)
+    chapter_content = text.strip()
+    actual_absurdity = expected_absurdity
+    actual_surrealism = expected_surrealism
+    actual_ridiculousness = expected_ridiculousness
+    actual_insanity = expected_insanity
+    
+    if parsed and isinstance(parsed, dict):
+        chapter_content = parsed.get("chapter_content", text.strip())
+        actual_absurdity = parsed.get("absurdity", expected_absurdity)
+        actual_surrealism = parsed.get("surrealism", expected_surrealism)
+        actual_ridiculousness = parsed.get("ridiculousness", expected_ridiculousness)
+        actual_insanity = parsed.get("insanity", expected_insanity)
+        logger.info(
+            "✓ Chapter %d generated with chaos parameters from OpenAI response",
+            chapter_number
+        )
+    else:
+        logger.warning(
+            "Failed to parse chapter JSON response, using text as-is and expected chaos values"
+        )
+    
+    if _needs_conclusion(chapter_content):
+        chapter_content = await _complete_chapter(story, chapter_content)
+    
     elapsed = int((time.perf_counter() - start) * 1000)
     tokens_used: int | None = None
     if usage:
         tokens_used = usage.get("completion_tokens") or usage.get("total_tokens")
+    
     return {
         "chapter_number": chapter_number,
-        "content": text.strip(),
+        "content": chapter_content.strip(),
         "tokens_used": tokens_used,
         "generation_time_ms": elapsed,
         "model_used": _settings.openai_model,
+        "absurdity": actual_absurdity,
+        "surrealism": actual_surrealism,
+        "ridiculousness": actual_ridiculousness,
+        "insanity": actual_insanity,
     }
 
 
@@ -585,6 +690,15 @@ async def spawn_new_story() -> dict[str, Any]:
         "premise": premise,
         "theme_json": theme,
         "premise_payload": premise_data,
+        # Extract chaos parameters from premise_data
+        "absurdity_initial": premise_data.get("absurdity_initial", 0.1),
+        "surrealism_initial": premise_data.get("surrealism_initial", 0.1),
+        "ridiculousness_initial": premise_data.get("ridiculousness_initial", 0.1),
+        "insanity_initial": premise_data.get("insanity_initial", 0.1),
+        "absurdity_increment": premise_data.get("absurdity_increment", 0.05),
+        "surrealism_increment": premise_data.get("surrealism_increment", 0.05),
+        "ridiculousness_increment": premise_data.get("ridiculousness_increment", 0.05),
+        "insanity_increment": premise_data.get("insanity_increment", 0.05),
     }
 
 

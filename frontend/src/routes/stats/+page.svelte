@@ -37,6 +37,40 @@
     </div>
   </section>
 
+  <section class="chaos-summary">
+    <h2>Average Chaos Parameters</h2>
+    <div class="chaos-grid">
+      <div class="chaos-stat" style="--color: #f59e0b;">
+        <span>Absurdity</span>
+        <strong>{data.stats.average_absurdity?.toFixed(3) ?? '0.000'}</strong>
+        <div class="chaos-bar">
+          <div class="chaos-bar-fill" style="width: {((data.stats.average_absurdity ?? 0) * 100).toFixed(0)}%; background: #f59e0b;"></div>
+        </div>
+      </div>
+      <div class="chaos-stat" style="--color: #8b5cf6;">
+        <span>Surrealism</span>
+        <strong>{data.stats.average_surrealism?.toFixed(3) ?? '0.000'}</strong>
+        <div class="chaos-bar">
+          <div class="chaos-bar-fill" style="width: {((data.stats.average_surrealism ?? 0) * 100).toFixed(0)}%; background: #8b5cf6;"></div>
+        </div>
+      </div>
+      <div class="chaos-stat" style="--color: #ec4899;">
+        <span>Ridiculousness</span>
+        <strong>{data.stats.average_ridiculousness?.toFixed(3) ?? '0.000'}</strong>
+        <div class="chaos-bar">
+          <div class="chaos-bar-fill" style="width: {((data.stats.average_ridiculousness ?? 0) * 100).toFixed(0)}%; background: #ec4899;"></div>
+        </div>
+      </div>
+      <div class="chaos-stat" style="--color: #ef4444;">
+        <span>Insanity</span>
+        <strong>{data.stats.average_insanity?.toFixed(3) ?? '0.000'}</strong>
+        <div class="chaos-bar">
+          <div class="chaos-bar-fill" style="width: {((data.stats.average_insanity ?? 0) * 100).toFixed(0)}%; background: #ef4444;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="activity">
     <h2>Recent Activity</h2>
     <ul>
@@ -123,5 +157,59 @@
     margin-top: 0.75rem;
     line-height: 1.6;
     opacity: 0.85;
+  }
+
+  .chaos-summary {
+    margin-bottom: 3rem;
+  }
+
+  .chaos-summary h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: #38bdf8;
+  }
+
+  .chaos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .chaos-stat {
+    background: rgba(15, 23, 42, 0.7);
+    padding: 1.5rem;
+    border-radius: 18px;
+    border: 2px solid var(--color);
+    text-align: center;
+  }
+
+  .chaos-stat span {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+    margin-bottom: 0.5rem;
+  }
+
+  .chaos-stat strong {
+    display: block;
+    font-size: 1.75rem;
+    color: var(--color);
+    margin-bottom: 1rem;
+  }
+
+  .chaos-bar {
+    background: rgba(255, 255, 255, 0.1);
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .chaos-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
   }
 </style>

@@ -26,6 +26,18 @@ class Story(Base):
     theme_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_chapter_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    
+    # Chaos parameters - initial values set at story creation
+    absurdity_initial: Mapped[float] = mapped_column(Float, default=0.1)
+    surrealism_initial: Mapped[float] = mapped_column(Float, default=0.1)
+    ridiculousness_initial: Mapped[float] = mapped_column(Float, default=0.1)
+    insanity_initial: Mapped[float] = mapped_column(Float, default=0.1)
+    
+    # Increments per chapter
+    absurdity_increment: Mapped[float] = mapped_column(Float, default=0.05)
+    surrealism_increment: Mapped[float] = mapped_column(Float, default=0.05)
+    ridiculousness_increment: Mapped[float] = mapped_column(Float, default=0.05)
+    insanity_increment: Mapped[float] = mapped_column(Float, default=0.05)
 
     chapters: Mapped[list["Chapter"]] = relationship(
         back_populates="story", cascade="all, delete-orphan", order_by="Chapter.chapter_number"
@@ -47,6 +59,12 @@ class Chapter(Base):
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     generation_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    
+    # Chaos parameters - actual values for this chapter as returned by OpenAI
+    absurdity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    surrealism: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ridiculousness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    insanity: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     story: Mapped[Story] = relationship(back_populates="chapters")
 

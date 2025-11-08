@@ -20,11 +20,36 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
     )
     prompt = (
         f"Story: {story.title}\nPremise: {story.premise}\n"
+        f"Current chapter count: {story.chapter_count}\n"
         f"Recent chapters:\n{chapter_summaries}\n\n"
-        "Evaluate this story's quality and viability.\n"
-        "Score 0-10 on: coherence, novelty, engagement, pacing.\n"
-        "Return JSON: {coherence_score, novelty_score, engagement_score, pacing_score, should_continue, reasoning, issues[]}\n"
-        "Terminate if: repetitive, quality degraded, plot exhausted, stuck."
+        "Evaluate this story's quality and viability with STRICT criteria.\n\n"
+        "Score 0-10 on each dimension:\n"
+        "- coherence: Is the plot logical and consistent? (Be strict: 0-3=incoherent, 4-6=some issues, 7-8=good, 9-10=excellent)\n"
+        "- novelty: Is the story fresh and interesting? (Be strict: 0-3=derivative, 4-6=somewhat interesting, 7-8=creative, 9-10=highly original)\n"
+        "- engagement: Would readers want to continue? (Be strict: 0-3=boring, 4-6=mildly interesting, 7-8=engaging, 9-10=captivating)\n"
+        "- pacing: Does the story progress well? (Be strict: 0-3=stalled, 4-6=uneven, 7-8=good flow, 9-10=perfect pace)\n\n"
+        "IMPORTANT: Be HARSH in your evaluation. Most stories should NOT continue.\n"
+        "Set should_continue to FALSE if ANY of these apply:\n"
+        "- Story is repetitive or going in circles\n"
+        "- Quality has degraded from earlier chapters\n"
+        "- Plot feels exhausted or forced\n"
+        "- Story has lost its original premise or direction\n"
+        "- Characters are acting inconsistently without good reason\n"
+        "- Pacing has stalled or become meandering\n"
+        "- Any score is below 5.0\n"
+        "- Overall quality is merely 'okay' rather than 'good' or 'excellent'\n"
+        "- Story has exceeded 10 chapters without significant plot development\n\n"
+        "Return ONLY valid JSON in this exact structure:\n"
+        "{\n"
+        '  "coherence_score": <0-10>,\n'
+        '  "novelty_score": <0-10>,\n'
+        '  "engagement_score": <0-10>,\n'
+        '  "pacing_score": <0-10>,\n'
+        '  "should_continue": <true/false>,\n'
+        '  "reasoning": "Brief explanation of your decision",\n'
+        '  "issues": ["issue1", "issue2"]\n'
+        "}\n\n"
+        "Remember: Most stories should be terminated. Only truly exceptional stories should continue."
     )
 
     def _neutral_payload(reason: str) -> dict[str, Any]:
@@ -57,8 +82,7 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
         else:
             effective_max_tokens = raw_max_tokens
 
-        # Check if this is a gpt-5 model - these don't support temperature
-        # Try max_completion_tokens first (for newer models), fallback to max_tokens
+        # Build request parameters
         request_params = {
             "model": _settings.openai_eval_model,
             "messages": [
@@ -67,13 +91,14 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
             ],
         }
         
-        try:
+        # Use max_completion_tokens for reasoning models (o1, gpt-5), max_tokens for others
+        if is_reasoning_model:
             request_params["max_completion_tokens"] = effective_max_tokens
-        except Exception:
+        else:
             request_params["max_tokens"] = effective_max_tokens
         
-        # Only add temperature for non-gpt-5 models
-        if not is_gpt5_model:
+        # Only add temperature for non-gpt-5 and non-reasoning models
+        if not is_gpt5_model and not is_reasoning_model:
             request_params["temperature"] = _settings.openai_temperature_eval
         
         response = await _client.chat.completions.create(**request_params)
