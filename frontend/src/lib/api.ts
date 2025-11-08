@@ -69,6 +69,24 @@ export function killStory(id: string, reason?: string): Promise<any> {
   });
 }
 
+export function deleteStory(id: string): Promise<any> {
+  return request(`/api/stories/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+export function spawnStory(): Promise<any> {
+  return request('/api/admin/spawn', {
+    method: 'POST'
+  });
+}
+
+export function resetSystem(): Promise<any> {
+  return request('/api/admin/reset', {
+    method: 'POST'
+  });
+}
+
 export function getStats(): Promise<any> {
   return request('/api/stats');
 }

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -36,15 +37,25 @@ class BackgroundWorker:
             logger.info("Background worker stopped")
 
     async def _tick(self) -> None:
-        if not self._lock.locked():
-            async with self._lock:
-                try:
-                    await self._run_cycle()
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Background cycle failed: %s", exc)
+        if self._lock.locked():
+            logger.debug("Background tick skipped: previous run still in progress")
+            return
+
+        async with self._lock:
+            tick_start = time.perf_counter()
+            logger.debug("Background tick started")
+            try:
+                await self._run_cycle()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Background cycle failed: %s", exc)
+            finally:
+                duration_ms = (time.perf_counter() - tick_start) * 1000
+                logger.debug("Background tick finished in %.2f ms", duration_ms)
 
     async def _run_cycle(self) -> None:
         async with get_session() as session:
+            cycle_start = time.perf_counter()
+            logger.debug("Fetching runtime configuration")
             runtime_config = await get_runtime_config(session)
             active_stmt = (
                 select(Story)
@@ -53,6 +64,7 @@ class BackgroundWorker:
                 .order_by(Story.created_at)
             )
             active_stories = list((await session.execute(active_stmt)).scalars())
+            logger.debug("Active stories loaded: %d", len(active_stories))
 
             now = datetime.utcnow()
             for story in active_stories:
@@ -67,6 +79,9 @@ class BackgroundWorker:
             await self._maintain_story_count(session, runtime_config)
             await session.commit()
 
+            cycle_duration_ms = (time.perf_counter() - cycle_start) * 1000
+            logger.debug("Background cycle completed in %.2f ms", cycle_duration_ms)
+
     async def _process_story(
         self,
         session,
@@ -74,7 +89,15 @@ class BackgroundWorker:
         now: datetime,
         config: RuntimeConfig,
     ) -> None:
+        logger.debug(
+            "Processing story %s (status=%s chapters=%d last_chapter_at=%s)",
+            story.id,
+            story.status,
+            story.chapter_count,
+            story.last_chapter_at,
+        )
         if story.status != "active":
+            logger.debug("Story %s is not active; skipping", story.id)
             return
 
         if story.chapter_count >= config.max_chapters_per_story:
@@ -82,14 +105,34 @@ class BackgroundWorker:
             return
 
         last_chapter = story.last_chapter_at or story.created_at
-        if (now - last_chapter) >= timedelta(seconds=config.chapter_interval_seconds):
+        elapsed = (now - last_chapter).total_seconds()
+        if elapsed >= config.chapter_interval_seconds:
             await self._create_chapter(session, story, config)
+        else:
+            logger.debug(
+                "Skipping chapter for story %s; %.1fs elapsed (needs %.1fs)",
+                story.id,
+                elapsed,
+                config.chapter_interval_seconds,
+            )
 
         if (
             story.chapter_count >= settings.min_chapters_before_eval
             and story.chapter_count % config.evaluation_interval_chapters == 0
         ):
+            logger.debug(
+                "Triggering evaluation for story %s at chapter %d",
+                story.id,
+                story.chapter_count,
+            )
             await self._evaluate_story(session, story, config)
+        else:
+            logger.debug(
+                "No evaluation for story %s this cycle (chapter_count=%d, interval=%d)",
+                story.id,
+                story.chapter_count,
+                config.evaluation_interval_chapters,
+            )
 
     async def _create_chapter(
         self, session, story: Story, config: RuntimeConfig
@@ -138,6 +181,9 @@ class BackgroundWorker:
     ) -> None:
         chapters_stmt = select(Chapter).where(Chapter.story_id == story.id).order_by(Chapter.chapter_number)
         chapters = list((await session.execute(chapters_stmt)).scalars())
+        logger.debug(
+            "Evaluating story %s with %d chapters", story.id, len(chapters)
+        )
         result = await evaluate_story(story, chapters)
         evaluation = StoryEvaluation(
             story_id=story.id,
@@ -203,13 +249,21 @@ class BackgroundWorker:
     async def _maintain_story_count(self, session, config: RuntimeConfig) -> None:
         count_stmt = select(func.count()).select_from(Story).where(Story.status == "active")
         active_count = (await session.execute(count_stmt)).scalar_one()
+        logger.debug(
+            "Maintaining story count: active=%d min=%d max=%d",
+            active_count,
+            config.min_active_stories,
+            config.max_active_stories,
+        )
 
         if active_count < config.min_active_stories:
             needed = config.min_active_stories - active_count
+            logger.debug("Spawning %d stories to reach minimum active target", needed)
             for _ in range(needed):
                 await self._spawn_story(session)
         elif active_count > config.max_active_stories:
             excess = active_count - config.max_active_stories
+            logger.debug("Completing %d stories to enforce maximum active limit", excess)
             victims_stmt = (
                 select(Story)
                 .where(Story.status == "active")

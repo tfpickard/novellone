@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { goto } from '$app/navigation';
   import type { PageData } from './$types';
   import { applyStoryTheme, type StoryTheme } from '$lib/theme';
   import { createStorySocket, type StorySocketMessage } from '$lib/websocket';
-  import { killStory as killStoryRequest } from '$lib/api';
+  import { killStory as killStoryRequest, deleteStory as deleteStoryRequest } from '$lib/api';
 
   export let data: PageData;
 
@@ -12,10 +13,16 @@
   let socket: WebSocket | null = null;
   let killing = false;
   let killError: string | null = null;
+  let deleting = false;
+  let deleteError: string | null = null;
 
   const theme = story.theme_json as StoryTheme;
 
   async function handleSocket(message: StorySocketMessage) {
+    if (message.type === 'system_reset') {
+      await goto('/');
+      return;
+    }
     if (message.story_id !== story.id) return;
     if (message.type === 'new_chapter') {
       story = {
@@ -57,6 +64,24 @@
       killError = error instanceof Error ? error.message : 'Failed to end story';
     } finally {
       killing = false;
+    }
+  }
+
+  async function handleDelete() {
+    if (deleting) return;
+    const confirmed = window.confirm(`Are you sure you want to permanently delete "${story.title}"? This action cannot be undone.`);
+    if (!confirmed) return;
+    
+    deleting = true;
+    deleteError = null;
+    try {
+      await deleteStoryRequest(story.id);
+      // Navigate back to the main page after deletion
+      await goto('/');
+    } catch (error) {
+      console.error('Failed to delete story', error);
+      deleteError = error instanceof Error ? error.message : 'Failed to delete story';
+      deleting = false;
     }
   }
 
@@ -110,8 +135,14 @@
           {killing ? 'Ending…' : 'Kill Story'}
         </button>
       {/if}
+      <button class="delete-button" on:click={handleDelete} disabled={deleting}>
+        {deleting ? 'Deleting…' : 'Delete Story'}
+      </button>
       {#if killError}
         <p class="kill-error">{killError}</p>
+      {/if}
+      {#if deleteError}
+        <p class="delete-error">{deleteError}</p>
       {/if}
     </div>
   </header>
@@ -262,7 +293,37 @@
     cursor: not-allowed;
   }
 
+  .delete-button {
+    background: #7f1d1d;
+    color: #f8fafc;
+    border: none;
+    border-radius: 999px;
+    padding: 0.6rem 1.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 10px 24px rgba(127, 29, 29, 0.35);
+  }
+
+  .delete-button:hover:enabled {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px rgba(127, 29, 29, 0.45);
+  }
+
+  .delete-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .kill-error {
+    color: #fca5a5;
+    font-size: 0.85rem;
+    margin: 0;
+  }
+
+  .delete-error {
     color: #fca5a5;
     font-size: 0.85rem;
     margin: 0;
