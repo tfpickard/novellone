@@ -42,7 +42,7 @@ class AppSettings(BaseSettings):
     )
     enable_websocket: bool = Field(True, alias="ENABLE_WEBSOCKET")
 
-    public_api_url: Annotated[str | None, Field(alias="PUBLIC_API_URL")] = None
+    public_api_url: Annotated[str | None, Field(default=None, alias="PUBLIC_API_URL")]
 
     @property
     def evaluation_weights(self) -> "EvaluationWeights":
