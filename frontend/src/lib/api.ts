@@ -4,7 +4,7 @@ if (!base) {
   if (typeof window !== 'undefined') {
     base = `${window.location.hostname}:8000`;
   } else {
-    base = 'localhost:8000';
+    base = 'backend:8000';
   }
 }
 
