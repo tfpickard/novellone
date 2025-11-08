@@ -264,14 +264,20 @@ async def kill_story(
         story.completed_at = datetime.utcnow()
         story.completion_reason = reason
         
-        # Generate cover image for the completed story
-        try:
-            cover_url = await generate_cover_image(story.title, story.premise)
-            if cover_url:
-                story.cover_image_url = cover_url
-                logger.info("Cover image generated for manually killed story %s", story.title)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
+        # Generate cover image for the completed story (only if we don't have one)
+        if not story.cover_image_url:
+            logger.info("Generating cover image for manually killed story: %s", story.title)
+            try:
+                cover_url = await generate_cover_image(story.title, story.premise)
+                if cover_url:
+                    story.cover_image_url = cover_url
+                    logger.info("✓ Cover image saved for manually killed story %s", story.title)
+                else:
+                    logger.warning("✗ No cover image URL returned for story %s", story.title)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
+        else:
+            logger.debug("Story %s already has cover image, skipping generation", story.title)
         
         await session.commit()
 

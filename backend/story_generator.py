@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from typing import Any, Sequence
 
@@ -22,7 +23,6 @@ async def _call_openai(
             model=model,
             input=prompt,
             max_output_tokens=max_tokens,
-            # temperature=temperature,
         )
     except OpenAIError as exc:
         logger.exception("OpenAI request failed: %s", exc)
@@ -76,6 +76,8 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     extracts the first balanced JSON object it can find and parses it. If no valid JSON is
     present, ``None`` is returned.
     """
+    if not text or not text.strip():
+        return None
 
     candidates: list[str] = []
 
@@ -83,16 +85,19 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     if trimmed:
         candidates.append(trimmed)
 
+    # Try to extract from markdown code fences
     fence_start = trimmed.find("```")
     if fence_start != -1:
         fence_end = trimmed.rfind("```")
         if fence_end != -1 and fence_end > fence_start:
             inner = trimmed[fence_start + 3 : fence_end]
-            inner = inner.lstrip("json\n\r ")
+            # Remove language identifier (json, jsonc, etc.)
+            inner = re.sub(r'^json[^\n]*\n?', '', inner, flags=re.IGNORECASE)
             inner = inner.strip()
             if inner:
                 candidates.append(inner)
 
+    # Try to find JSON objects by matching braces
     start = text.find("{")
     while start != -1:
         depth = 0
@@ -104,18 +109,22 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
             elif char == "}":
                 depth -= 1
                 if depth == 0:
-                    candidates.append(text[start : end + 1].strip())
+                    json_candidate = text[start : end + 1].strip()
+                    candidates.append(json_candidate)
                     break
             end += 1
         start = text.find("{", start + 1)
 
+    # Try each candidate
     seen: set[str] = set()
     for candidate in candidates:
         if not candidate or candidate in seen:
             continue
         seen.add(candidate)
         try:
-            return json.loads(candidate)
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
             continue
     return None
@@ -131,36 +140,110 @@ def _safe_json_loads(text: str) -> dict[str, Any] | None:
 
 
 async def generate_story_premise() -> dict[str, Any]:
+    # More explicit prompt with stronger instructions
     prompt = (
-        "Generate a unique, compelling science fiction story premise. Be creative and "
-        "explore unusual, surreal and disturbing concepts.\n"
-        "Include a character named Tom who is an engineer to the story. He can be a major or minor character.\n"
-        "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
-        'Examples: "Von Neumann probes develop culture", "Time dilation prison", "Sentient Dyson sphere"'
+        "Generate a unique science fiction story premise. "
+        "CRITICAL: You MUST respond with ONLY valid JSON, no other text.\n\n"
+        "Requirements:\n"
+        "- Create a completely unique title (never use 'Untitled Expedition' or 'The Unknown Journey')\n"
+        "- Be creative: explore unusual, surreal, disturbing sci-fi concepts\n"
+        "- Include character Tom (engineer, major or minor role)\n"
+        "- Make each story premise completely different\n\n"
+        "Respond with ONLY this JSON structure (no markdown, no code blocks, no explanations):\n"
+        '{"title": "Unique Title Here", "premise": "Detailed premise text", "themes": ["theme1"], "setting": "Setting description", "central_conflict": "Conflict description"}\n\n'
+        "Example titles: 'Echoes of the Quantum Conductor', 'The Symphony of Interfaces', 'Resonance of the Distant Past', 'Neural Labyrinth Protocol'"
     )
-    try:
-        text, _ = await _call_openai(
-            _settings.openai_premise_model,
-            prompt,
-            max_tokens=_settings.openai_max_tokens_premise,
-            temperature=_settings.openai_temperature_premise,
-        )
-        logger.debug("Raw premise response: %s", text[:200])
-        parsed = _safe_json_loads(text)
-        if parsed is not None:
-            logger.info("Successfully generated premise: %s", parsed.get("title", "Unknown"))
-            return parsed
-        logger.warning("Premise response not JSON, wrapping text. Response: %s", text[:500])
-        return {
-            "title": "Untitled Expedition",
-            "premise": text.strip(),
-            "themes": [],
-            "setting": "Unknown",
-            "central_conflict": "Unclear",
-        }
-    except Exception as exc:
-        logger.exception("Failed to generate premise: %s", exc)
-        raise
+    
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            text, _ = await _call_openai(
+                _settings.openai_premise_model,
+                prompt,
+                max_tokens=_settings.openai_max_tokens_premise,
+                temperature=_settings.openai_temperature_premise,
+            )
+            logger.debug("Raw premise response (attempt %d, first 500 chars): %s", attempt + 1, text[:500])
+            
+            # Try to parse JSON
+            parsed = _safe_json_loads(text)
+            if parsed is not None:
+                # Validate required fields
+                title = parsed.get("title", "").strip()
+                premise = parsed.get("premise", "").strip()
+                
+                # Reject generic fallback titles
+                if title.lower() in ("untitled expedition", "the unknown journey", "untitled", "unknown journey"):
+                    logger.warning("Rejected generic title '%s', retrying...", title)
+                    if attempt < max_retries - 1:
+                        continue
+                    # Last attempt failed, generate unique title
+                    title = f"Story {int(time.time()) % 100000}"
+                
+                if title and premise:
+                    logger.info("✓ Successfully generated premise: '%s'", title)
+                    return parsed
+                else:
+                    logger.warning("Parsed JSON missing required fields. Title: %s, Premise: %s", bool(title), bool(premise))
+            
+            # If JSON parsing failed, try to extract title and premise from text
+            logger.warning("JSON parsing failed (attempt %d). Attempting to extract from text. Response: %s", attempt + 1, text[:500])
+            
+            # Try to extract title from common patterns
+            title_match = None
+            premise_text = text.strip()
+            
+            # Look for patterns like "Title: ..." or quoted titles
+            title_patterns = [
+                r'"title"\s*:\s*"([^"]+)"',
+                r"'title'\s*:\s*'([^']+)'",
+                r'Title:\s*"?([^"\n]+)"?',
+                r'#\s*([^\n]+)',  # Markdown header
+            ]
+            
+            for pattern in title_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    title_match = match.group(1).strip()
+                    # Reject generic titles
+                    if title_match.lower() not in ("untitled expedition", "the unknown journey", "untitled", "unknown journey"):
+                        break
+                    title_match = None
+            
+            # If we found a title, use it; otherwise generate one from the premise
+            if title_match:
+                title = title_match
+            else:
+                # Generate a unique title from the premise text
+                words = [w for w in premise_text.split()[:8] if w.isalnum() and len(w) > 2]
+                if words:
+                    title = " ".join(word.capitalize() for word in words[:4])
+                else:
+                    title = f"Story {int(time.time()) % 100000}"
+            
+            logger.info("Generated fallback premise with title: '%s'", title)
+            return {
+                "title": title,
+                "premise": premise_text if premise_text else "A mysterious journey unfolds.",
+                "themes": [],
+                "setting": "Unknown",
+                "central_conflict": "Unclear",
+            }
+        except Exception as exc:
+            logger.exception("Failed to generate premise (attempt %d): %s", attempt + 1, exc)
+            if attempt < max_retries - 1:
+                continue
+    
+    # All retries failed - return unique fallback
+    fallback_title = f"Story {int(time.time()) % 100000}"
+    logger.warning("All attempts failed. Using emergency fallback title: %s", fallback_title)
+    return {
+        "title": fallback_title,
+        "premise": "A mysterious journey unfolds.",
+        "themes": [],
+        "setting": "Unknown",
+        "central_conflict": "Unclear",
+    }
 
 
 async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
@@ -288,18 +371,21 @@ async def generate_chapter(
 async def generate_cover_image(story_title: str, story_premise: str) -> str:
     """Generate a cover image for a completed story using DALL-E.
     
-    Returns the URL of the generated image.
+    Returns the URL of the generated image, or empty string on failure.
     """
     # Create a concise, visual prompt for DALL-E based on the story
+    # Limit premise to avoid prompt length issues
+    premise_summary = story_premise[:200] if len(story_premise) > 200 else story_premise
+    
     prompt = (
         f"Book cover art for a science fiction story titled '{story_title}'. "
-        f"Story premise: {story_premise[:200]}... "
+        f"Story premise: {premise_summary}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
-        "Style: modern sci-fi book cover, professional, dramatic lighting, no text."
+        "Style: modern sci-fi book cover, professional, dramatic lighting, no text or words."
     )
     
     logger.info("Generating cover image for story: %s", story_title)
-    logger.debug("Cover image prompt: %s", prompt[:300])
+    logger.debug("Cover image prompt length: %d chars", len(prompt))
     
     try:
         response = await _client.images.generate(
@@ -310,15 +396,36 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
             n=1,
         )
         
-        if response.data and len(response.data) > 0:
-            image_url = response.data[0].url
-            logger.info("✓ Successfully generated cover image for: %s - URL: %s", story_title, image_url[:50])
-            return image_url
-        else:
-            logger.warning("✗ No image data returned for story: %s", story_title)
+        if not response:
+            logger.warning("✗ Empty response from DALL-E for story: %s", story_title)
             return ""
+        
+        if not hasattr(response, 'data') or not response.data:
+            logger.warning("✗ No data attribute in DALL-E response for story: %s", story_title)
+            return ""
+        
+        if len(response.data) == 0:
+            logger.warning("✗ Empty data array in DALL-E response for story: %s", story_title)
+            return ""
+        
+        image_obj = response.data[0]
+        if not hasattr(image_obj, 'url') or not image_obj.url:
+            logger.warning("✗ No URL in image object for story: %s", story_title)
+            return ""
+        
+        image_url = image_obj.url
+        if not image_url or not image_url.startswith('http'):
+            logger.warning("✗ Invalid URL format for story %s: %s", story_title, image_url[:50] if image_url else "None")
+            return ""
+        
+        logger.info("✓ Successfully generated cover image for: %s - URL: %s", story_title, image_url[:60])
+        return image_url
+        
     except OpenAIError as exc:
         logger.exception("✗ OpenAI error generating cover image for %s: %s", story_title, exc)
+        return ""
+    except AttributeError as exc:
+        logger.exception("✗ Attribute error generating cover image for %s: %s", story_title, exc)
         return ""
     except Exception as exc:
         logger.exception("✗ Unexpected error generating cover image for %s: %s", story_title, exc)
