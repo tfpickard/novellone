@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from typing import Any, Sequence
 
@@ -17,56 +18,138 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 async def _call_openai(
     model: str, prompt: str, *, max_tokens: int, temperature: float
 ) -> tuple[str, dict[str, int] | None]:
+    """Call OpenAI API using Chat Completions endpoint."""
     try:
-        response = await _client.responses.create(
-            model=model,
-            input=prompt,
-            max_output_tokens=max_tokens,
-            # temperature=temperature,
+        # Check if this is a reasoning model (o1, gpt-5-mini, etc.)
+        # Reasoning models need much higher token limits because they use tokens for internal reasoning
+        is_reasoning_model = any(
+            x in model.lower() for x in ["o1", "gpt-5", "reasoning"]
         )
+
+        # Check if this is a gpt-5 model - these don't support temperature at all
+        is_gpt5_model = "gpt-5" in model.lower()
+
+        # For reasoning models, increase token limit significantly
+        # They use ~80% of tokens for reasoning, so we need 5x the desired output
+        # But cap at reasonable limits to avoid API errors
+        if is_reasoning_model:
+            # Cap at 16k tokens max for reasoning models (API limit is usually 16k-32k)
+            effective_max_tokens = min(max_tokens * 5, 16000)
+            logger.debug(
+                "Reasoning model detected (%s), increasing token limit from %d to %d",
+                model,
+                max_tokens,
+                effective_max_tokens,
+            )
+        else:
+            effective_max_tokens = max_tokens
+
+        # Build request parameters - use max_completion_tokens for newer models
+        request_params = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a creative science fiction writer who generates unique story ideas in JSON format.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        }
+
+        # Try max_completion_tokens first (for newer models like o1), fallback to max_tokens
+        try:
+            request_params["max_completion_tokens"] = effective_max_tokens
+        except Exception:
+            request_params["max_tokens"] = effective_max_tokens
+
+        # Only add temperature for non-gpt-5 models
+        # GPT-5 models don't support temperature parameter at all
+        if not is_gpt5_model:
+            request_params["temperature"] = temperature
+
+        response = await _client.chat.completions.create(**request_params)
     except OpenAIError as exc:
         logger.exception("OpenAI request failed: %s", exc)
         raise
 
     usage: dict[str, int] | None = None
-    response_usage = getattr(response, "usage", None)
-    if response_usage is not None:
-        if hasattr(response_usage, "model_dump"):
-            usage = {
-                key: int(value)
-                for key, value in response_usage.model_dump().items()
-                if isinstance(value, (int, float))
-            }
-        elif isinstance(response_usage, dict):
-            usage = {
-                key: int(value)
-                for key, value in response_usage.items()
-                if isinstance(value, (int, float))
-            }
-        else:
-            extracted: dict[str, int] = {}
-            for key in ("output_tokens", "input_tokens", "total_tokens", "completion_tokens"):
-                value = getattr(response_usage, key, None)
-                if isinstance(value, (int, float)):
-                    extracted[key] = int(value)
-            usage = extracted or None
+    if response.usage:
+        usage = {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+        }
 
-    text = getattr(response, "output_text", None)
-    if text:
-        return text, usage
+    if not response.choices or len(response.choices) == 0:
+        logger.error("OpenAI response had no choices. Response: %s", response)
+        raise RuntimeError("OpenAI response had no choices")
 
-    output = getattr(response, "output", None)
-    if not output:
-        raise RuntimeError("OpenAI response was empty")
+    choice = response.choices[0]
+    message = choice.message
 
-    if output[0].type == "message":
-        return output[0].content[0].text, usage
-    text_output = "".join(
-        part.content[0].text if getattr(part, "type", None) == "message" else ""
-        for part in output
-        if hasattr(part, "content")
-    )
-    return text_output, usage
+    # Check finish_reason for issues
+    finish_reason = getattr(choice, "finish_reason", None)
+    if finish_reason == "content_filter":
+        logger.error("OpenAI response was filtered. Model: %s", model)
+        raise RuntimeError("OpenAI response was filtered by content policy")
+    elif finish_reason == "length":
+        # Check if this is a reasoning model that used all tokens for reasoning
+        usage_details = getattr(response.usage, "completion_tokens_details", None)
+        if usage_details:
+            reasoning_tokens = getattr(usage_details, "reasoning_tokens", 0)
+            accepted_tokens = getattr(usage_details, "accepted_prediction_tokens", 0)
+            if reasoning_tokens > 0 and accepted_tokens == 0:
+                logger.error(
+                    "Reasoning model %s used all tokens for reasoning (%d), none for output. Increase max_completion_tokens.",
+                    model,
+                    reasoning_tokens,
+                )
+                raise RuntimeError(
+                    f"Model used all {reasoning_tokens} tokens for reasoning, none left for output. Increase max_completion_tokens."
+                )
+        logger.warning(
+            "OpenAI response was truncated due to length. Model: %s, Finish reason: %s",
+            model,
+            finish_reason,
+        )
+        # Continue anyway - partial content is better than nothing
+
+    if not message:
+        logger.error(
+            "OpenAI response message was None. Response: %s, Finish reason: %s",
+            response,
+            finish_reason,
+        )
+        raise RuntimeError("OpenAI response message was None")
+
+    # Handle different response formats
+    content = None
+    if hasattr(message, "content"):
+        content = message.content
+    elif hasattr(message, "text"):
+        content = message.text
+    elif hasattr(message, "text_content"):
+        content = message.text_content
+
+    if not content:
+        logger.error(
+            "OpenAI response message content was empty. Message: %s, Finish reason: %s, Response: %s",
+            message,
+            finish_reason,
+            response,
+        )
+        raise RuntimeError("OpenAI response message was empty")
+
+    content_str = content.strip() if isinstance(content, str) else str(content).strip()
+    if not content_str:
+        logger.error(
+            "OpenAI response message content was empty after stripping. Original: %s, Finish reason: %s",
+            content,
+            finish_reason,
+        )
+        raise RuntimeError("OpenAI response message was empty")
+
+    return content_str, usage
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -76,6 +159,8 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     extracts the first balanced JSON object it can find and parses it. If no valid JSON is
     present, ``None`` is returned.
     """
+    if not text or not text.strip():
+        return None
 
     candidates: list[str] = []
 
@@ -83,16 +168,19 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     if trimmed:
         candidates.append(trimmed)
 
+    # Try to extract from markdown code fences
     fence_start = trimmed.find("```")
     if fence_start != -1:
         fence_end = trimmed.rfind("```")
         if fence_end != -1 and fence_end > fence_start:
             inner = trimmed[fence_start + 3 : fence_end]
-            inner = inner.lstrip("json\n\r ")
+            # Remove language identifier (json, jsonc, etc.)
+            inner = re.sub(r"^json[^\n]*\n?", "", inner, flags=re.IGNORECASE)
             inner = inner.strip()
             if inner:
                 candidates.append(inner)
 
+    # Try to find JSON objects by matching braces
     start = text.find("{")
     while start != -1:
         depth = 0
@@ -104,18 +192,22 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
             elif char == "}":
                 depth -= 1
                 if depth == 0:
-                    candidates.append(text[start : end + 1].strip())
+                    json_candidate = text[start : end + 1].strip()
+                    candidates.append(json_candidate)
                     break
             end += 1
         start = text.find("{", start + 1)
 
+    # Try each candidate
     seen: set[str] = set()
     for candidate in candidates:
         if not candidate or candidate in seen:
             continue
         seen.add(candidate)
         try:
-            return json.loads(candidate)
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
             continue
     return None
@@ -131,36 +223,153 @@ def _safe_json_loads(text: str) -> dict[str, Any] | None:
 
 
 async def generate_story_premise() -> dict[str, Any]:
+    # More explicit prompt with stronger instructions
     prompt = (
-        "Generate a unique, compelling science fiction story premise. Be creative and "
-        "explore unusual, surreal and disturbing concepts.\n"
-        "Include a character named Tom who is an engineer to the story. He can be a major or minor character.\n"
-        "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
-        'Examples: "Von Neumann probes develop culture", "Time dilation prison", "Sentient Dyson sphere"'
+        "Generate a unique, creative science fiction story premise.\n\n"
+        "Requirements:\n"
+        "- Create a completely unique, memorable title (NEVER use generic titles like 'Untitled Expedition', 'The Unknown Journey', 'Unknown', etc.)\n"
+        "- Be highly creative: explore unusual, surreal, disturbing, or mind-bending sci-fi concepts\n"
+        "- Include a character named Tom who is an engineer (can be major or minor role)\n"
+        "- Each story must be completely unique and different from any previous story\n"
+        "- Each story must be somewhat absurd, ridiculous and surreal. Choose how much of each randomly.\n"
+        "- Write a detailed, engaging premise (2-3 sentences minimum)\n\n"
+        "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
+        "{\n"
+        '  "title": "Your Unique Creative Title",\n'
+        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
+        '  "themes": ["theme1", "theme2"],\n'
+        '  "setting": "Brief setting description",\n'
+        '  "central_conflict": "The main conflict or problem"\n'
+        "}\n\n"
+        "Example titles for inspiration (create something different):\n"
+        "- Echoes of the Quantum Conductor\n"
+        "- The Symphony of Interfaces\n"
+        "- Resonance of the Distant Past\n"
+        "- Neural Labyrinth Protocol\n"
+        "- Cathedral of Borrowed Futures\n"
+        "- The Recursion Architects"
     )
-    try:
-        text, _ = await _call_openai(
-            _settings.openai_premise_model,
-            prompt,
-            max_tokens=_settings.openai_max_tokens_premise,
-            temperature=_settings.openai_temperature_premise,
-        )
-        logger.debug("Raw premise response: %s", text[:200])
-        parsed = _safe_json_loads(text)
-        if parsed is not None:
-            logger.info("Successfully generated premise: %s", parsed.get("title", "Unknown"))
-            return parsed
-        logger.warning("Premise response not JSON, wrapping text. Response: %s", text[:500])
-        return {
-            "title": "Untitled Expedition",
-            "premise": text.strip(),
-            "themes": [],
-            "setting": "Unknown",
-            "central_conflict": "Unclear",
-        }
-    except Exception as exc:
-        logger.exception("Failed to generate premise: %s", exc)
-        raise
+
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            text, _ = await _call_openai(
+                _settings.openai_premise_model,
+                prompt,
+                max_tokens=_settings.openai_max_tokens_premise,
+                temperature=_settings.openai_temperature_premise,
+            )
+            logger.debug(
+                "Raw premise response (attempt %d, first 500 chars): %s",
+                attempt + 1,
+                text[:500],
+            )
+
+            # Try to parse JSON
+            parsed = _safe_json_loads(text)
+            if parsed is not None:
+                # Validate required fields
+                title = parsed.get("title", "").strip()
+                premise = parsed.get("premise", "").strip()
+
+                # Reject generic fallback titles
+                if title.lower() in (
+                    "untitled expedition",
+                    "the unknown journey",
+                    "untitled",
+                    "unknown journey",
+                ):
+                    logger.warning("Rejected generic title '%s', retrying...", title)
+                    if attempt < max_retries - 1:
+                        continue
+                    # Last attempt failed, generate unique title
+                    title = f"Story {int(time.time()) % 100000}"
+
+                if title and premise:
+                    logger.info("✓ Successfully generated premise: '%s'", title)
+                    return parsed
+                else:
+                    logger.warning(
+                        "Parsed JSON missing required fields. Title: %s, Premise: %s",
+                        bool(title),
+                        bool(premise),
+                    )
+
+            # If JSON parsing failed, try to extract title and premise from text
+            logger.warning(
+                "JSON parsing failed (attempt %d). Attempting to extract from text. Response: %s",
+                attempt + 1,
+                text[:500],
+            )
+
+            # Try to extract title from common patterns
+            title_match = None
+            premise_text = text.strip()
+
+            # Look for patterns like "Title: ..." or quoted titles
+            title_patterns = [
+                r'"title"\s*:\s*"([^"]+)"',
+                r"'title'\s*:\s*'([^']+)'",
+                r'Title:\s*"?([^"\n]+)"?',
+                r"#\s*([^\n]+)",  # Markdown header
+            ]
+
+            for pattern in title_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    title_match = match.group(1).strip()
+                    # Reject generic titles
+                    if title_match.lower() not in (
+                        "untitled expedition",
+                        "the unknown journey",
+                        "untitled",
+                        "unknown journey",
+                    ):
+                        break
+                    title_match = None
+
+            # If we found a title, use it; otherwise generate one from the premise
+            if title_match:
+                title = title_match
+            else:
+                # Generate a unique title from the premise text
+                words = [
+                    w for w in premise_text.split()[:8] if w.isalnum() and len(w) > 2
+                ]
+                if words:
+                    title = " ".join(word.capitalize() for word in words[:4])
+                else:
+                    title = f"Story {int(time.time()) % 100000}"
+
+            logger.info("Generated fallback premise with title: '%s'", title)
+            return {
+                "title": title,
+                "premise": premise_text
+                if premise_text
+                else "A mysterious journey unfolds.",
+                "themes": [],
+                "setting": "Unknown",
+                "central_conflict": "Unclear",
+            }
+        except Exception as exc:
+            logger.exception(
+                "Failed to generate premise (attempt %d): %s", attempt + 1, exc
+            )
+            if attempt < max_retries - 1:
+                continue
+
+    # All retries failed - return unique fallback
+    fallback_title = f"Story {int(time.time()) % 100000}"
+    logger.warning(
+        "All attempts failed. Using emergency fallback title: %s", fallback_title
+    )
+    return {
+        "title": fallback_title,
+        "premise": "A mysterious journey unfolds.",
+        "themes": [],
+        "setting": "Unknown",
+        "central_conflict": "Unclear",
+    }
 
 
 async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
@@ -258,6 +467,8 @@ async def generate_chapter(
         f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
         "Aim for 600-900 words and ensure the chapter forms a coherent arc with a beginning, middle, and end."
         " Do not end mid-sentence; conclude with a strong beat or hook."
+        " Make this chapter 10%<n<25% more ridiculous and/or absurd and/or surreal than the previous chapter. "
+        "If this is the first chapter, pick a number 5%<n<25% and use it as a coefficient of absurdity."
     )
     start = time.perf_counter()
     text, usage = await _call_openai(
@@ -271,11 +482,7 @@ async def generate_chapter(
     elapsed = int((time.perf_counter() - start) * 1000)
     tokens_used: int | None = None
     if usage:
-        tokens_used = (
-            usage.get("output_tokens")
-            or usage.get("completion_tokens")
-            or usage.get("total_tokens")
-        )
+        tokens_used = usage.get("completion_tokens") or usage.get("total_tokens")
     return {
         "chapter_number": chapter_number,
         "content": text.strip(),
@@ -287,20 +494,23 @@ async def generate_chapter(
 
 async def generate_cover_image(story_title: str, story_premise: str) -> str:
     """Generate a cover image for a completed story using DALL-E.
-    
-    Returns the URL of the generated image.
+
+    Returns the URL of the generated image, or empty string on failure.
     """
     # Create a concise, visual prompt for DALL-E based on the story
+    # Limit premise to avoid prompt length issues
+    premise_summary = story_premise[:200] if len(story_premise) > 200 else story_premise
+
     prompt = (
         f"Book cover art for a science fiction story titled '{story_title}'. "
-        f"Story premise: {story_premise[:200]}... "
+        f"Story premise: {premise_summary}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
-        "Style: modern sci-fi book cover, professional, dramatic lighting, no text."
+        "Style: modern sci-fi book cover, professional, dramatic lighting, no text or words."
     )
-    
+
     logger.info("Generating cover image for story: %s", story_title)
-    logger.debug("Cover image prompt: %s", prompt[:300])
-    
+    logger.debug("Cover image prompt length: %d chars", len(prompt))
+
     try:
         response = await _client.images.generate(
             model="dall-e-3",
@@ -309,19 +519,59 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
             quality="standard",
             n=1,
         )
-        
-        if response.data and len(response.data) > 0:
-            image_url = response.data[0].url
-            logger.info("✓ Successfully generated cover image for: %s - URL: %s", story_title, image_url[:50])
-            return image_url
-        else:
-            logger.warning("✗ No image data returned for story: %s", story_title)
+
+        if not response:
+            logger.warning("✗ Empty response from DALL-E for story: %s", story_title)
             return ""
+
+        if not hasattr(response, "data") or not response.data:
+            logger.warning(
+                "✗ No data attribute in DALL-E response for story: %s", story_title
+            )
+            return ""
+
+        if len(response.data) == 0:
+            logger.warning(
+                "✗ Empty data array in DALL-E response for story: %s", story_title
+            )
+            return ""
+
+        image_obj = response.data[0]
+        image_url = getattr(image_obj, "url", None)
+        if image_url and image_url.startswith("http"):
+            logger.info(
+                "✓ Successfully generated cover image for: %s - URL: %s",
+                story_title,
+                image_url[:60],
+            )
+            return image_url
+
+        b64_data = getattr(image_obj, "b64_json", None)
+        if b64_data:
+            data_url = f"data:image/png;base64,{b64_data}"
+            logger.info(
+                "✓ Generated cover image (base64) for: %s",
+                story_title,
+            )
+            return data_url
+
+        logger.warning("✗ No image URL or base64 data returned for story: %s", story_title)
+        return ""
+
     except OpenAIError as exc:
-        logger.exception("✗ OpenAI error generating cover image for %s: %s", story_title, exc)
+        logger.exception(
+            "✗ OpenAI error generating cover image for %s: %s", story_title, exc
+        )
+        return ""
+    except AttributeError as exc:
+        logger.exception(
+            "✗ Attribute error generating cover image for %s: %s", story_title, exc
+        )
         return ""
     except Exception as exc:
-        logger.exception("✗ Unexpected error generating cover image for %s: %s", story_title, exc)
+        logger.exception(
+            "✗ Unexpected error generating cover image for %s: %s", story_title, exc
+        )
         return ""
 
 

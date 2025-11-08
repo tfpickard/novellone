@@ -17,7 +17,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import selectinload
 
@@ -26,7 +26,7 @@ from config import get_settings
 from config_store import apply_config_updates, get_runtime_config
 from logging_config import configure_logging
 from database import get_session
-from models import Chapter, Story, StoryEvaluation
+from models import Chapter, Story, StoryEvaluation, SystemConfig
 from story_generator import generate_cover_image, spawn_new_story
 from websocket_manager import ws_manager
 
@@ -264,14 +264,20 @@ async def kill_story(
         story.completed_at = datetime.utcnow()
         story.completion_reason = reason
         
-        # Generate cover image for the completed story
-        try:
-            cover_url = await generate_cover_image(story.title, story.premise)
-            if cover_url:
-                story.cover_image_url = cover_url
-                logger.info("Cover image generated for manually killed story %s", story.title)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
+        # Generate cover image for the completed story (only if we don't have one)
+        if not story.cover_image_url:
+            logger.info("Generating cover image for manually killed story: %s", story.title)
+            try:
+                cover_url = await generate_cover_image(story.title, story.premise)
+                if cover_url:
+                    story.cover_image_url = cover_url
+                    logger.info("✓ Cover image saved for manually killed story %s", story.title)
+                else:
+                    logger.warning("✗ No cover image URL returned for story %s", story.title)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
+        else:
+            logger.debug("Story %s already has cover image, skipping generation", story.title)
         
         await session.commit()
 
@@ -379,6 +385,38 @@ async def stories_ws(websocket: WebSocket) -> None:
 
 @app.post("/api/admin/spawn", status_code=201)
 async def admin_spawn_story(session: SessionDep) -> dict[str, Any]:
+    """Spawn a new story. If at max active stories, terminate the oldest active story first."""
+    runtime_config = await get_runtime_config(session)
+    
+    # Check if we're at max active stories
+    count_stmt = select(func.count()).select_from(Story).where(Story.status == "active")
+    active_count = (await session.execute(count_stmt)).scalar_one()
+    
+    if active_count >= runtime_config.max_active_stories:
+        # Find and terminate the oldest active story
+        oldest_stmt = (
+            select(Story)
+            .where(Story.status == "active")
+            .order_by(Story.created_at.asc())
+            .limit(1)
+        )
+        oldest_story = (await session.execute(oldest_stmt)).scalar_one_or_none()
+        if oldest_story:
+            oldest_story.status = "completed"
+            oldest_story.completed_at = datetime.utcnow()
+            oldest_story.completion_reason = "Replaced by new story"
+            # Generate cover image for the terminated story
+            if not oldest_story.cover_image_url:
+                try:
+                    cover_url = await generate_cover_image(oldest_story.title, oldest_story.premise)
+                    if cover_url:
+                        oldest_story.cover_image_url = cover_url
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Failed to generate cover image for replaced story %s", oldest_story.title)
+            await session.flush()
+            logger.info("Terminated oldest story '%s' to make room for new story", oldest_story.title)
+    
+    # Spawn the new story
     payload = await spawn_new_story()
     story = Story(
         title=payload["title"],
@@ -396,7 +434,33 @@ async def admin_spawn_story(session: SessionDep) -> dict[str, Any]:
     story_obj = (await session.execute(stmt)).scalars().first()
     if not story_obj:
         raise HTTPException(status_code=500, detail="Failed to spawn story")
+    
+    await session.commit()
+    
+    if settings.enable_websocket:
+        await ws_manager.broadcast({
+            "type": "new_story",
+            "story_id": str(story_obj.id),
+        })
+    
     return StoryDetail.from_model(story_obj).model_dump()
+
+
+@app.delete("/api/stories/{story_id}")
+async def delete_story(story_id: uuid.UUID, session: SessionDep) -> dict[str, Any]:
+    """Permanently delete a story and all its chapters/evaluations."""
+    stmt = select(Story).where(Story.id == story_id)
+    story = (await session.execute(stmt)).scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    title = story.title
+    session.delete(story)
+    await session.commit()
+    
+    logger.info("Deleted story: %s", title)
+    
+    return {"message": f"Story '{title}' deleted successfully", "deleted": True}
 
 
 @app.post("/api/admin/backfill-cover-images")
@@ -445,6 +509,34 @@ async def admin_backfill_cover_images(session: SessionDep) -> dict[str, Any]:
         "processed": len(stories),
         "success": success_count,
         "failed": failed_count
+    }
+
+
+@app.post("/api/admin/reset", status_code=202)
+async def admin_reset_system(session: SessionDep) -> dict[str, Any]:
+    """Clear all stories and reset runtime configuration to defaults."""
+    story_count = (
+        await session.execute(select(func.count()).select_from(Story))
+    ).scalar_one()
+
+    # Delete stories (cascades to chapters/evaluations)
+    await session.execute(delete(Story))
+    # Reset runtime config to .env defaults
+    await session.execute(delete(SystemConfig))
+    await session.commit()
+
+    if settings.enable_websocket:
+        await ws_manager.broadcast(
+            {
+                "type": "system_reset",
+                "deleted_stories": story_count,
+            }
+        )
+
+    logger.info("System reset performed: %s stories removed", story_count)
+    return {
+        "message": "System reset to configuration defaults",
+        "deleted_stories": story_count,
     }
 
 

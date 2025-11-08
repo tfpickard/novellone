@@ -1,10 +1,51 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import type { PageData } from './$types';
   import { createThemeAction, type StoryTheme } from '$lib/theme';
+  import { spawnStory, resetSystem } from '$lib/api';
 
   export let data: PageData;
 
   const stories = data.stories.items ?? [];
+  let spawning = false;
+  let spawnError: string | null = null;
+  let resetting = false;
+  let resetError: string | null = null;
+
+  async function handleSpawnStory() {
+    if (spawning) return;
+    spawning = true;
+    spawnError = null;
+    try {
+      const newStory = await spawnStory();
+      // Navigate to the new story
+      await goto(`/story/${newStory.id}`);
+    } catch (error) {
+      console.error('Failed to spawn story', error);
+      spawnError = error instanceof Error ? error.message : 'Failed to generate new story';
+      spawning = false;
+    }
+  }
+
+  async function handleResetSystem() {
+    if (resetting) return;
+    const confirmed = window.confirm(
+      'This will remove all stories and reset the system configuration. Continue?'
+    );
+    if (!confirmed) return;
+
+    resetting = true;
+    resetError = null;
+    try {
+      await resetSystem();
+      await goto('/');
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to reset system', error);
+      resetError = error instanceof Error ? error.message : 'Failed to reset system';
+      resetting = false;
+    }
+  }
 </script>
 
 <div class="page-container">
@@ -13,18 +54,34 @@
       <h1>Eternal Stories</h1>
       <p>Autonomous science fiction tales evolving in real time.</p>
     </div>
-    <div class="stats">
-      <div>
-        <span>Active</span>
-        <strong>{stories.filter((s) => s.status === 'active').length}</strong>
+    <div class="hero-right">
+      <div class="actions">
+        <button class="spawn-button" on:click={handleSpawnStory} disabled={spawning}>
+          {spawning ? 'Generating...' : '+ Generate New Story'}
+        </button>
+        <button class="reset-button" on:click={handleResetSystem} disabled={resetting}>
+          {resetting ? 'Clearing…' : 'Reset System'}
+        </button>
       </div>
-      <div>
-        <span>Completed</span>
-        <strong>{stories.filter((s) => s.status === 'completed').length}</strong>
-      </div>
-      <div>
-        <span>Total</span>
-        <strong>{data.stories.total ?? stories.length}</strong>
+      {#if spawnError}
+        <p class="error-text">{spawnError}</p>
+      {/if}
+      {#if resetError}
+        <p class="error-text">{resetError}</p>
+      {/if}
+      <div class="stats">
+        <div>
+          <span>Active</span>
+          <strong>{stories.filter((s) => s.status === 'active').length}</strong>
+        </div>
+        <div>
+          <span>Completed</span>
+          <strong>{stories.filter((s) => s.status === 'completed').length}</strong>
+        </div>
+        <div>
+          <span>Total</span>
+          <strong>{data.stories.total ?? stories.length}</strong>
+        </div>
       </div>
     </div>
   </header>
@@ -66,6 +123,75 @@
     justify-content: space-between;
     gap: 2rem;
     margin-bottom: 2.5rem;
+  }
+
+  .hero-right {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-end;
+  }
+
+  .spawn-button {
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .spawn-button:hover:enabled {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(56, 189, 248, 0.5);
+  }
+
+  .spawn-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .reset-button {
+    background: rgba(220, 38, 38, 0.2);
+    color: #fca5a5;
+    border: 1px solid rgba(252, 165, 165, 0.6);
+    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .reset-button:hover:enabled {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(248, 113, 113, 0.3);
+  }
+
+  .reset-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .error-text {
+    color: #fca5a5;
+    font-size: 0.85rem;
+    margin: 0;
+    text-align: right;
   }
 
   .hero h1 {
@@ -216,6 +342,21 @@
     .hero {
       flex-direction: column;
       align-items: flex-start;
+    }
+
+    .hero-right {
+      width: 100%;
+      align-items: stretch;
+    }
+
+    .actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .spawn-button,
+    .reset-button {
+      width: 100%;
     }
 
     .stats {
