@@ -110,6 +110,46 @@ async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
         }
 
 
+_TERMINATING_PUNCTUATION = {".", "!", "?", "…"}
+_CLOSING_PUNCTUATION = {"'", '"', "”", "’", "]", ")", "»"}
+
+
+def _needs_conclusion(text: str) -> bool:
+    trimmed = text.rstrip()
+    if not trimmed:
+        return False
+    while trimmed and trimmed[-1] in _CLOSING_PUNCTUATION:
+        trimmed = trimmed[:-1]
+    if not trimmed:
+        return False
+    if trimmed.endswith("..."):
+        return False
+    return trimmed[-1] not in _TERMINATING_PUNCTUATION
+
+
+async def _complete_chapter(story: Story, draft: str) -> str:
+    completion_prompt = (
+        f"Story: {story.title}\n"
+        f"Premise: {story.premise}\n"
+        "The following chapter draft ended abruptly."
+        " Continue it with a concise concluding section (1-2 paragraphs)"
+        " that resolves the immediate scene while preserving tension for future chapters."
+        " Maintain the same perspective, tone, and pacing, and do not repeat existing text.\n\n"
+        "Chapter draft so far:\n"
+        f"{draft}\n\n"
+        "Write only the new concluding text."
+    )
+    max_tokens = max(256, int(_settings.openai_max_tokens_chapter * 0.35))
+    addition = await _call_openai(
+        _settings.openai_model,
+        completion_prompt,
+        max_tokens=max_tokens,
+        temperature=_settings.openai_temperature_chapter,
+    )
+    separator = "\n\n" if not draft.endswith("\n\n") else "\n"
+    return f"{draft.rstrip()}{separator}{addition.strip()}"
+
+
 async def generate_chapter(
     story: Story,
     recent_chapters: Sequence[Chapter],
@@ -125,7 +165,8 @@ async def generate_chapter(
         f"Premise: {story.premise}\n"
         f"Previous chapters: {context or 'None yet.'}\n"
         f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
-        "500-800 words."
+        "Aim for 600-900 words and ensure the chapter forms a coherent arc with a beginning, middle, and end."
+        " Do not end mid-sentence; conclude with a strong beat or hook."
     )
     start = time.perf_counter()
     text = await _call_openai(
@@ -134,6 +175,8 @@ async def generate_chapter(
         max_tokens=_settings.openai_max_tokens_chapter,
         temperature=_settings.openai_temperature_chapter,
     )
+    if _needs_conclusion(text):
+        text = await _complete_chapter(story, text)
     elapsed = int((time.perf_counter() - start) * 1000)
     return {
         "chapter_number": chapter_number,
