@@ -1,0 +1,161 @@
+import json
+import logging
+import time
+from typing import Any, Sequence
+
+from openai import AsyncOpenAI, OpenAIError
+
+from config import get_settings
+from models import Chapter, Story
+
+logger = logging.getLogger(__name__)
+
+_settings = get_settings()
+_client = AsyncOpenAI(api_key=_settings.openai_api_key)
+
+
+async def _call_openai(model: str, prompt: str, *, max_tokens: int, temperature: float) -> str:
+    try:
+        response = await _client.responses.create(
+            model=model,
+            input=prompt,
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        )
+    except OpenAIError as exc:
+        logger.exception("OpenAI request failed: %s", exc)
+        raise
+
+    text = getattr(response, 'output_text', None)
+    if text:
+        return text
+
+    output = getattr(response, 'output', None)
+    if not output:
+        raise RuntimeError('OpenAI response was empty')
+
+    if output[0].type == 'message':
+        return output[0].content[0].text
+    return ''.join(
+        part.content[0].text if getattr(part, 'type', None) == 'message' else ''
+        for part in output
+        if hasattr(part, 'content')
+    )
+
+
+async def generate_story_premise() -> dict[str, Any]:
+    prompt = (
+        "Generate a unique, compelling science fiction story premise. Be creative and "
+        "explore unusual concepts.\n"
+        "Return JSON: {title, premise, themes[], setting, central_conflict}\n"
+        "Examples: \"Von Neumann probes develop culture\", \"Time dilation prison\", \"Sentient Dyson sphere\""
+    )
+    text = await _call_openai(
+        _settings.openai_premise_model,
+        prompt,
+        max_tokens=_settings.openai_max_tokens_premise,
+        temperature=_settings.openai_temperature_premise,
+    )
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Premise response not JSON, wrapping text")
+        return {
+            "title": "Untitled Expedition",
+            "premise": text.strip(),
+            "themes": [],
+            "setting": "Unknown",
+            "central_conflict": "Unclear",
+        }
+
+
+async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
+    prompt = (
+        f"Based on {title!r} and the following premise: {premise}\n"
+        "generate a visual theme matching the story's tone/setting.\n"
+        "Return JSON with exact structure: {primary_color, secondary_color, background_color, text_color, "
+        "text_secondary, accent_color, border_color, card_background, font_heading, font_body, aesthetic, mood, "
+        "border_radius, shadow_style, animation_speed}.\n"
+        "Make colors harmonious and readable. Choose fonts that match aesthetic."
+    )
+    text = await _call_openai(
+        _settings.openai_premise_model,
+        prompt,
+        max_tokens=_settings.openai_max_tokens_premise,
+        temperature=_settings.openai_temperature_premise,
+    )
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Theme response not JSON, providing fallback theme")
+        return {
+            "primary_color": "#1f2933",
+            "secondary_color": "#3d5a80",
+            "background_color": "#0f172a",
+            "text_color": "#f8fafc",
+            "text_secondary": "#cbd5f5",
+            "accent_color": "#e0fbfc",
+            "border_color": "#1e293b",
+            "card_background": "#16213e",
+            "font_heading": "Orbitron, sans-serif",
+            "font_body": "Inter, sans-serif",
+            "aesthetic": "fallback",
+            "mood": "mysterious",
+            "border_radius": "12px",
+            "shadow_style": "0 12px 32px rgba(15, 23, 42, 0.45)",
+            "animation_speed": "0.4s",
+        }
+
+
+async def generate_chapter(
+    story: Story,
+    recent_chapters: Sequence[Chapter],
+    *,
+    chapter_number: int,
+) -> dict[str, Any]:
+    context = "\n\n".join(
+        f"Chapter {chapter.chapter_number}: {chapter.content}" for chapter in recent_chapters
+    )
+    prompt = (
+        f"Story: {story.title}\n"
+        f"Premise: {story.premise}\n"
+        f"Previous chapters: {context or 'None yet.'}\n"
+        f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
+        "500-800 words."
+    )
+    start = time.perf_counter()
+    text = await _call_openai(
+        _settings.openai_model,
+        prompt,
+        max_tokens=_settings.openai_max_tokens_chapter,
+        temperature=_settings.openai_temperature_chapter,
+    )
+    elapsed = int((time.perf_counter() - start) * 1000)
+    return {
+        "chapter_number": chapter_number,
+        "content": text.strip(),
+        "tokens_used": None,
+        "generation_time_ms": elapsed,
+        "model_used": _settings.openai_model,
+    }
+
+
+async def spawn_new_story() -> dict[str, Any]:
+    premise_data = await generate_story_premise()
+    title = premise_data.get("title") or "Untitled Expedition"
+    premise = premise_data.get("premise") or "A mysterious journey unfolds."
+    theme = await generate_story_theme(premise, title)
+    return {
+        "title": title,
+        "premise": premise,
+        "theme_json": theme,
+        "premise_payload": premise_data,
+    }
+
+
+__all__ = [
+    "generate_story_premise",
+    "generate_story_theme",
+    "generate_chapter",
+    "spawn_new_story",
+]
