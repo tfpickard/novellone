@@ -85,7 +85,7 @@ After deployment:
 curl https://hurl.lol/api/health
 
 # Should return:
-# {"status":"healthy","service":"hurl-unmasks-recursive-literature-leaking-out-light-backend"}
+# {"status":"healthy","service":"hurl-unmasks-recursive-literature-leaking-out-love-backend"}
 ```
 
 Then visit https://hurl.lol in your browser - login and API calls should work without CORS errors!

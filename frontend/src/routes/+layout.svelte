@@ -29,12 +29,12 @@
 </script>
 
 <svelte:head>
-  <title>Hurl Unmasks Recursive Literature Leaking Out Light</title>
+  <title>Hurl Unmasks Recursive Literature Leaking Out Love</title>
 </svelte:head>
 
 <nav class="site-nav">
   <div class="page-container nav-content">
-    <a class="brand" href="/">Hurl Unmasks Recursive Literature Leaking Out Light</a>
+    <a class="brand" href="/">Hurl Unmasks Recursive Literature Leaking Out Love</a>
     <div class="nav-links">
       {#each navItems as item}
         {@const active = item.isActive(currentPath)}

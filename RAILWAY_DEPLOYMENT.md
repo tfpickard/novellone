@@ -1,6 +1,6 @@
 # Railway Deployment Guide
 
-This guide walks you through deploying Hurl Unmasks Recursive Literature Leaking Out Light to Railway with full CI/CD automation from GitHub.
+This guide walks you through deploying Hurl Unmasks Recursive Literature Leaking Out Love to Railway with full CI/CD automation from GitHub.
 
 ## Why Railway?
 
