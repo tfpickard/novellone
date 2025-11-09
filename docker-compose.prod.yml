@@ -49,13 +49,15 @@ services:
     container_name: novellone_frontend
     restart: unless-stopped
     environment:
+      # SvelteKit origin for SSR
       ORIGIN: https://hurl.lol
-      VITE_PUBLIC_API_URL: https://hurl.lol
-      VITE_PUBLIC_WS_URL: wss://hurl.lol/ws/stories
+      # Optional: Frontend auto-detects same-origin API if not set
+      # VITE_PUBLIC_API_URL: https://hurl.lol
+      # VITE_PUBLIC_WS_URL: wss://hurl.lol/ws/stories
     depends_on:
       - backend
     ports:
-      - "127.0.0.1:4000:4000"  # Bind to localhost only (nginx proxies)
+      - "127.0.0.1:4000:4000"  # Bind to localhost only (Caddy proxies)
     networks:
       - novellone_network
 

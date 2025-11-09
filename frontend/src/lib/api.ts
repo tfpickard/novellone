@@ -3,11 +3,13 @@ let base = publicApiUrl;
 
 if (!base) {
   if (typeof window !== 'undefined') {
-    // Browser fallback: call the host you’re visiting on port 8000
-    base = `${window.location.hostname}:8000`;
+    // Browser fallback: use same origin (goes through Caddy/nginx proxy)
+    // In production, this will be https://hurl.lol
+    // In development, this will be http://localhost:4000
+    base = window.location.origin;
   } else {
     // SSR in Docker fallback: use the Compose service DNS name
-    base = 'backend:8000';
+    base = 'http://backend:8000';
   }
 }
 

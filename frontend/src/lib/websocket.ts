@@ -7,10 +7,14 @@ export function createStorySocket(onMessage: (message: StorySocketMessage) => vo
   let endpoint = import.meta.env.VITE_PUBLIC_WS_URL as string | undefined;
   if (!endpoint) {
     if (typeof window !== 'undefined') {
+      // Use same host as current page (goes through Caddy/nginx proxy)
+      // In production: wss://hurl.lol/ws/stories
+      // In development: ws://localhost:4000/ws/stories
       const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      endpoint = `${scheme}://${window.location.hostname}:8000/ws/stories`;
+      endpoint = `${scheme}://${window.location.host}/ws/stories`;
     } else {
-      endpoint = 'ws://localhost:8000/ws/stories';
+      // SSR fallback
+      endpoint = 'ws://backend:8000/ws/stories';
     }
   }
 
