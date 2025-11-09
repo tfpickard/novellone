@@ -5,7 +5,7 @@ from typing import Any, Sequence
 from openai import AsyncOpenAI, OpenAIError
 
 from config import get_settings
-from models import Chapter, Story
+from models import Chapter, CohesionMetric, Story, UniversePrompt
 
 logger = logging.getLogger(__name__)
 
@@ -157,4 +157,166 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
     return payload
 
 
-__all__ = ["evaluate_story"]
+async def calculate_cohesion_metrics(
+    story: Story,
+    chapters: Sequence[Chapter],
+    universe_prompt: UniversePrompt | None = None,
+) -> dict[str, Any]:
+    """
+    Calculate cohesion metrics for a story against a universe prompt.
+
+    Metrics calculated:
+    - character_recurrence_score: How well story uses universe characters
+    - thematic_overlap_score: How well story aligns with universe themes
+    - timeline_continuity_score: How well story maintains universe consistency
+    - overall_cohesion_score: Weighted average of above
+
+    Returns a dict suitable for creating a CohesionMetric record.
+    """
+    # Prepare story content
+    story_text = f"Title: {story.title}\nPremise: {story.premise}\n\n"
+    story_text += "\n\n".join(
+        f"Chapter {c.chapter_number}:\n{c.content[:3000]}" for c in chapters[:10]  # First 10 chapters
+    )
+
+    # Prepare universe context if available
+    universe_context = ""
+    if universe_prompt:
+        from universe_extractor import generate_universe_prompt_text
+
+        universe_context = await generate_universe_prompt_text(universe_prompt)
+
+    if not universe_context:
+        # No universe prompt, return neutral scores
+        return {
+            "character_recurrence_score": 0.0,
+            "thematic_overlap_score": 0.0,
+            "timeline_continuity_score": 0.0,
+            "overall_cohesion_score": 0.0,
+            "details": {"message": "No universe prompt provided"},
+        }
+
+    # Call LLM to analyze cohesion
+    prompt = f"""Analyze how well this story coheres with the established universe.
+
+=== Universe Context ===
+{universe_context}
+
+=== Story to Analyze ===
+{story_text}
+
+Evaluate the story's cohesion with the universe on three dimensions (0.0-1.0 scale):
+
+1. **Character Recurrence** (0.0-1.0):
+   - How well does the story use or reference universe characters?
+   - Are character traits and relationships consistent?
+   - 0.0 = No universe characters used or major inconsistencies
+   - 0.5 = Some universe characters used with minor inconsistencies
+   - 1.0 = Strong use of universe characters with perfect consistency
+
+2. **Thematic Overlap** (0.0-1.0):
+   - How well does the story align with universe themes?
+   - Are the established motifs and concepts present?
+   - 0.0 = No thematic connection
+   - 0.5 = Some thematic alignment
+   - 1.0 = Strong thematic resonance
+
+3. **Timeline Continuity** (0.0-1.0):
+   - Does the story respect established lore, settings, and rules?
+   - Are there continuity errors or contradictions?
+   - 0.0 = Major contradictions with universe
+   - 0.5 = Minor continuity issues
+   - 1.0 = Perfect continuity
+
+Return ONLY valid JSON in this exact structure:
+{{
+  "character_recurrence_score": <0.0-1.0>,
+  "thematic_overlap_score": <0.0-1.0>,
+  "timeline_continuity_score": <0.0-1.0>,
+  "details": {{
+    "characters_used": ["character1", "character2"],
+    "themes_present": ["theme1", "theme2"],
+    "continuity_notes": "notes about timeline and lore consistency",
+    "strengths": ["strength1", "strength2"],
+    "weaknesses": ["weakness1", "weakness2"]
+  }}
+}}
+"""
+
+    try:
+        model_name = _settings.openai_eval_model.lower()
+        is_reasoning_model = any(x in model_name for x in ["o1", "gpt-5", "reasoning"])
+        is_gpt5_model = "gpt-5" in model_name
+
+        effective_max_tokens = _settings.openai_max_tokens_eval
+        if is_reasoning_model:
+            effective_max_tokens = min(effective_max_tokens * 5, 10000)
+
+        request_params = {
+            "model": _settings.openai_eval_model,
+            "messages": [
+                {"role": "system", "content": "You are a universe cohesion analyzer. Respond with JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+        }
+
+        if is_reasoning_model:
+            request_params["max_completion_tokens"] = effective_max_tokens
+        else:
+            request_params["max_tokens"] = effective_max_tokens
+
+        if not is_gpt5_model and not is_reasoning_model:
+            request_params["temperature"] = _settings.openai_temperature_eval
+
+        response = await _client.chat.completions.create(**request_params)
+
+        if not response.choices:
+            logger.error("Cohesion analysis response had no choices")
+            return _default_cohesion_metrics("No response from LLM")
+
+        choice = response.choices[0]
+        message = getattr(choice, "message", None)
+        content = ""
+        if message:
+            content = getattr(message, "content", "") or ""
+
+        if not content:
+            return _default_cohesion_metrics("Empty response from LLM")
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError:
+            logger.warning("Cohesion response not JSON, returning default")
+            return _default_cohesion_metrics("Invalid JSON response")
+
+        # Calculate overall score as average
+        char_score = result.get("character_recurrence_score", 0.0)
+        theme_score = result.get("thematic_overlap_score", 0.0)
+        timeline_score = result.get("timeline_continuity_score", 0.0)
+        overall = (char_score + theme_score + timeline_score) / 3.0
+
+        return {
+            "character_recurrence_score": char_score,
+            "thematic_overlap_score": theme_score,
+            "timeline_continuity_score": timeline_score,
+            "overall_cohesion_score": overall,
+            "details": result.get("details", {}),
+        }
+
+    except Exception as exc:
+        logger.exception("Failed to calculate cohesion metrics: %s", exc)
+        return _default_cohesion_metrics(f"Error: {exc}")
+
+
+def _default_cohesion_metrics(reason: str) -> dict[str, Any]:
+    """Return default cohesion metrics when analysis fails."""
+    return {
+        "character_recurrence_score": 0.0,
+        "thematic_overlap_score": 0.0,
+        "timeline_continuity_score": 0.0,
+        "overall_cohesion_score": 0.0,
+        "details": {"error": reason},
+    }
+
+
+__all__ = ["evaluate_story", "calculate_cohesion_metrics"]
