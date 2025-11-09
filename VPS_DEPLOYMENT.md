@@ -1,6 +1,6 @@
 # VPS Deployment Guide - hurl.lol
 
-Complete guide for deploying Eternal Stories on a VPS with Caddy reverse proxy and automatic HTTPS.
+Complete guide for deploying Hurl Unmasks Recursive Literature Leaking Out Light on a VPS with Caddy reverse proxy and automatic HTTPS.
 
 ## Overview
 
@@ -268,7 +268,7 @@ journalctl -u novellone -f
 
 # Test the application
 curl https://hurl.lol/api/health
-# Should return: {"status":"healthy","service":"eternal-stories-backend"}
+# Should return: {"status":"healthy","service":"hurl-unmasks-recursive-literature-leaking-out-light-backend"}
 
 # Visit in browser
 # https://hurl.lol

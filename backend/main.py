@@ -37,7 +37,7 @@ configure_logging(settings)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Eternal Stories", version="1.0.0")
+app = FastAPI(title="Hurl Unmasks Recursive Literature Leaking Out Light", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,7 +59,7 @@ app.include_router(auth_router)
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint for Railway and monitoring."""
-    return {"status": "healthy", "service": "eternal-stories-backend"}
+    return {"status": "healthy", "service": "hurl-unmasks-recursive-literature-leaking-out-light-backend"}
 
 
 SessionDep = Annotated[Any, Depends(get_db_session)]

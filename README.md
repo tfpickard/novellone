@@ -1,6 +1,6 @@
-# Eternal Stories
+# Hurl Unmasks Recursive Literature Leaking Out Light
 
-Autonomous science-fiction narratives that write, edit, score, and style themselves in real time. Eternal Stories orchestrates a pool of AI-authored tales, continuously generating chapters, evaluating quality, and presenting each story with bespoke visual theming.
+Autonomous science-fiction narratives that write, edit, score, and style themselves in real time. Hurl Unmasks Recursive Literature Leaking Out Light orchestrates a pool of AI-authored tales, continuously generating chapters, evaluating quality, and presenting each story with bespoke visual theming.
 
 ---
 
@@ -28,7 +28,7 @@ Autonomous science-fiction narratives that write, edit, score, and style themsel
 
 ## Project Overview
 
-Eternal Stories is a containerized platform built to explore autonomous storytelling. It generates multiple science-fiction stories simultaneously, lets them evolve chapter-by-chapter, evaluates their quality, and gracefully retires narratives that fall below expectations. The result is a living catalog of endlessly changing tales, each with unique aesthetics and a shared canon character named Tom—the tinkering engineer who anchors every premise.
+Hurl Unmasks Recursive Literature Leaking Out Light is a containerized platform built to explore autonomous storytelling. It generates multiple science-fiction stories simultaneously, lets them evolve chapter-by-chapter, evaluates their quality, and gracefully retires narratives that fall below expectations. The result is a living catalog of endlessly changing tales, each with unique aesthetics and a shared canon character named Tom—the tinkering engineer who anchors every premise.
 
 ---
 
