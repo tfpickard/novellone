@@ -29,4 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY . .
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Make railway-start.sh executable
+RUN chmod +x railway-start.sh
+
+# Railway provides PORT env var, default to 8000 for local dev
+ENV PORT=8000
+
+CMD ["sh", "railway-start.sh"]

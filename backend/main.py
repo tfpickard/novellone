@@ -29,6 +29,7 @@ from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation, SystemConfig
 from story_generator import generate_cover_image, spawn_new_story
+from text_stats import calculate_text_stats, calculate_aggregate_stats
 from websocket_manager import ws_manager
 
 settings = get_settings()
@@ -55,6 +56,12 @@ async def get_db_session():
 app.include_router(auth_router)
 
 
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint for Railway and monitoring."""
+    return {"status": "healthy", "service": "eternal-stories-backend"}
+
+
 SessionDep = Annotated[Any, Depends(get_db_session)]
 class ChapterRead(BaseModel):
     id: uuid.UUID
@@ -69,9 +76,11 @@ class ChapterRead(BaseModel):
     surrealism: float | None = None
     ridiculousness: float | None = None
     insanity: float | None = None
+    stats: dict[str, Any] | None = None
 
     @classmethod
-    def from_model(cls, chapter: Chapter) -> "ChapterRead":
+    def from_model(cls, chapter: Chapter, include_stats: bool = True) -> "ChapterRead":
+        stats = calculate_text_stats(chapter.content) if include_stats else None
         return cls(
             id=chapter.id,
             story_id=chapter.story_id,
@@ -85,6 +94,7 @@ class ChapterRead(BaseModel):
             surrealism=chapter.surrealism,
             ridiculousness=chapter.ridiculousness,
             insanity=chapter.insanity,
+            stats=stats,
         )
 
 
@@ -137,9 +147,16 @@ class StorySummary(BaseModel):
     surrealism_increment: float = 0.05
     ridiculousness_increment: float = 0.05
     insanity_increment: float = 0.05
+    aggregate_stats: dict[str, Any] | None = None
 
     @classmethod
-    def from_model(cls, story: Story) -> "StorySummary":
+    def from_model(cls, story: Story, include_stats: bool = False) -> "StorySummary":
+        aggregate_stats = None
+        if include_stats and story.chapters:
+            # Calculate aggregate statistics from all chapters
+            chapters_data = [{"content": c.content} for c in story.chapters]
+            aggregate_stats = calculate_aggregate_stats(chapters_data)
+        
         return cls(
             id=story.id,
             title=story.title,
@@ -159,6 +176,7 @@ class StorySummary(BaseModel):
             surrealism_increment=story.surrealism_increment,
             ridiculousness_increment=story.ridiculousness_increment,
             insanity_increment=story.insanity_increment,
+            aggregate_stats=aggregate_stats,
         )
 
 
@@ -170,10 +188,10 @@ class StoryDetail(StorySummary):
     @classmethod
     def from_model(cls, story: Story) -> "StoryDetail":
         return cls(
-            **StorySummary.from_model(story).model_dump(),
+            **StorySummary.from_model(story, include_stats=True).model_dump(),
             completion_reason=story.completion_reason,
             evaluations=[StoryEvaluationRead.from_model(e) for e in story.evaluations],
-            chapters=[ChapterRead.from_model(c) for c in story.chapters],
+            chapters=[ChapterRead.from_model(c, include_stats=True) for c in story.chapters],
         )
 
 
@@ -438,6 +456,16 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         await session.execute(select(func.avg(Chapter.insanity)))
     ).scalar_one() or 0.0
     
+    # Calculate aggregate text statistics across all chapters
+    all_chapters = (
+        await session.execute(select(Chapter))
+    ).scalars().all()
+    
+    aggregate_text_stats = None
+    if all_chapters:
+        chapters_data = [{"content": c.content} for c in all_chapters]
+        aggregate_text_stats = calculate_aggregate_stats(chapters_data)
+    
     return {
         "total_stories": total_stories,
         "total_chapters": total_chapters,
@@ -449,8 +477,9 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         "average_surrealism": float(avg_surrealism),
         "average_ridiculousness": float(avg_ridiculousness),
         "average_insanity": float(avg_insanity),
+        "text_statistics": aggregate_text_stats or {},
         "recent_activity": [
-            ChapterRead.from_model(c).model_dump() for c in recent_activity
+            ChapterRead.from_model(c, include_stats=False).model_dump() for c in recent_activity
         ],
     }
 

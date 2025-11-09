@@ -174,6 +174,24 @@
           <span>Tokens</span>
           <strong>{story.total_tokens ?? 0}</strong>
         </div>
+        {#if story.aggregate_stats}
+          <div>
+            <span>Total Words</span>
+            <strong>{story.aggregate_stats.total_word_count.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Avg Words/Ch</span>
+            <strong>{story.aggregate_stats.avg_words_per_chapter.toFixed(0)}</strong>
+          </div>
+          <div>
+            <span>Avg Word Length</span>
+            <strong>{story.aggregate_stats.avg_word_length.toFixed(1)} chars</strong>
+          </div>
+          <div>
+            <span>Lexical Diversity</span>
+            <strong>{(story.aggregate_stats.overall_lexical_diversity * 100).toFixed(1)}%</strong>
+          </div>
+        {/if}
       </aside>
       
       <aside class="chaos-params">
@@ -251,26 +269,48 @@
             <h2>Chapter {chapter.chapter_number}</h2>
             <time>{new Date(chapter.created_at).toLocaleString()}</time>
           </div>
-          {#if chapter.absurdity !== null && chapter.absurdity !== undefined}
-            <div class="chapter-chaos">
-              <div class="chaos-badge" style="background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5);">
-                <span class="chaos-label">A</span>
-                <span class="chaos-value">{chapter.absurdity.toFixed(2)}</span>
+          <div class="chapter-metadata">
+            {#if chapter.absurdity !== null && chapter.absurdity !== undefined}
+              <div class="chapter-chaos">
+                <div class="chaos-badge" style="background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5);">
+                  <span class="chaos-label">A</span>
+                  <span class="chaos-value">{chapter.absurdity.toFixed(2)}</span>
+                </div>
+                <div class="chaos-badge" style="background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5);">
+                  <span class="chaos-label">S</span>
+                  <span class="chaos-value">{chapter.surrealism?.toFixed(2) ?? 'N/A'}</span>
+                </div>
+                <div class="chaos-badge" style="background: rgba(236, 72, 153, 0.2); border-color: rgba(236, 72, 153, 0.5);">
+                  <span class="chaos-label">R</span>
+                  <span class="chaos-value">{chapter.ridiculousness?.toFixed(2) ?? 'N/A'}</span>
+                </div>
+                <div class="chaos-badge" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);">
+                  <span class="chaos-label">I</span>
+                  <span class="chaos-value">{chapter.insanity?.toFixed(2) ?? 'N/A'}</span>
+                </div>
               </div>
-              <div class="chaos-badge" style="background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5);">
-                <span class="chaos-label">S</span>
-                <span class="chaos-value">{chapter.surrealism?.toFixed(2) ?? 'N/A'}</span>
+            {/if}
+            {#if chapter.stats}
+              <div class="chapter-stats">
+                <span class="stat-item" title="Word count">
+                  <span class="stat-label">Words:</span>
+                  <span class="stat-value">{chapter.stats.word_count}</span>
+                </span>
+                <span class="stat-item" title="Average word length">
+                  <span class="stat-label">Avg:</span>
+                  <span class="stat-value">{chapter.stats.avg_word_length} chars</span>
+                </span>
+                <span class="stat-item" title="Sentence count">
+                  <span class="stat-label">Sentences:</span>
+                  <span class="stat-value">{chapter.stats.sentence_count}</span>
+                </span>
+                <span class="stat-item" title="Lexical diversity">
+                  <span class="stat-label">Diversity:</span>
+                  <span class="stat-value">{(chapter.stats.lexical_diversity * 100).toFixed(1)}%</span>
+                </span>
               </div>
-              <div class="chaos-badge" style="background: rgba(236, 72, 153, 0.2); border-color: rgba(236, 72, 153, 0.5);">
-                <span class="chaos-label">R</span>
-                <span class="chaos-value">{chapter.ridiculousness?.toFixed(2) ?? 'N/A'}</span>
-              </div>
-              <div class="chaos-badge" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);">
-                <span class="chaos-label">I</span>
-                <span class="chaos-value">{chapter.insanity?.toFixed(2) ?? 'N/A'}</span>
-              </div>
-            </div>
-          {/if}
+            {/if}
+          </div>
         </div>
         <div class="chapter-body">
           {@html renderMarkdown(chapter.content)}
@@ -580,6 +620,40 @@
 
   .chaos-value {
     font-weight: 700;
+  }
+
+  .chapter-metadata {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .chapter-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    font-size: 0.8rem;
+  }
+
+  .stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
+    background: rgba(100, 116, 139, 0.15);
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .stat-label {
+    opacity: 0.7;
+    font-size: 0.75rem;
+  }
+
+  .stat-value {
+    font-weight: 600;
+    color: #38bdf8;
   }
 
   .chaos-params {

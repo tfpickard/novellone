@@ -1,0 +1,44 @@
+# Railway Configuration for Eternal Stories
+# This file defines the services that make up the application
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+# Backend Service Configuration
+[[services]]
+name = "backend"
+source = "backend"
+
+[services.build]
+dockerfilePath = "backend/Dockerfile"
+
+[services.deploy]
+startCommand = "sh railway-start.sh"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 10
+
+[[services.ports]]
+port = 8000
+protocol = "http"
+
+# Frontend Service Configuration
+[[services]]
+name = "frontend"
+source = "frontend"
+
+[services.build]
+dockerfilePath = "frontend/Dockerfile"
+
+[[services.ports]]
+port = 3000
+protocol = "http"
+
+[services.deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 10
+
