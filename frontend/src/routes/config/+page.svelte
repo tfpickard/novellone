@@ -6,28 +6,51 @@
 
   export let data: PageData;
 
-  type ConfigKey =
+  type NumericKind = 'int' | 'float';
+  type NumericConfigKey =
     | 'chapter_interval_seconds'
     | 'evaluation_interval_chapters'
     | 'quality_score_min'
     | 'max_chapters_per_story'
     | 'min_active_stories'
     | 'max_active_stories'
-    | 'context_window_chapters';
+    | 'context_window_chapters'
+    | 'openai_temperature_chapter'
+    | 'openai_temperature_premise'
+    | 'openai_temperature_eval';
 
-  type NumericKind = 'int' | 'float';
-  type ConfigValues = Record<ConfigKey, number>;
+  type StringConfigKey = 'openai_model' | 'openai_premise_model' | 'openai_eval_model';
 
-  type ConfigItem = {
-    key: ConfigKey;
+  type ConfigKey = NumericConfigKey | StringConfigKey;
+
+  type ConfigValues = {
+    [K in NumericConfigKey]: number;
+  } & {
+    [K in StringConfigKey]: string;
+  };
+
+  type NumericConfigItem = {
+    key: NumericConfigKey;
     label: string;
     description: string;
     hint?: string;
+    kind: 'number';
     type: NumericKind;
     min: number;
     max?: number;
     step: number;
   };
+
+  type TextConfigItem = {
+    key: StringConfigKey;
+    label: string;
+    description: string;
+    hint?: string;
+    kind: 'string';
+    placeholder?: string;
+  };
+
+  type ConfigItem = NumericConfigItem | TextConfigItem;
 
   const initialConfig = (data.config as RuntimeConfig | undefined) ?? {
     chapter_interval_seconds: 60,
@@ -36,7 +59,13 @@
     max_chapters_per_story: 20,
     min_active_stories: 1,
     max_active_stories: 3,
-    context_window_chapters: 3
+    context_window_chapters: 3,
+    openai_model: 'gpt-4o-mini',
+    openai_premise_model: 'gpt-4o-mini',
+    openai_eval_model: 'gpt-4o-mini',
+    openai_temperature_chapter: 1.0,
+    openai_temperature_premise: 1.0,
+    openai_temperature_eval: 0.3
   };
 
   let config: ConfigValues = { ...initialConfig };
@@ -47,6 +76,7 @@
       label: 'Chapter Interval',
       description: 'Time between automatic chapter generations for active stories.',
       hint: 'Lower values increase pacing but demand more resources.',
+      kind: 'number',
       type: 'int',
       min: 10,
       max: 3600,
@@ -57,6 +87,7 @@
       label: 'Evaluation Interval',
       description: 'How frequently the evaluation agent reviews story quality.',
       hint: 'A smaller interval keeps stories on course but costs more tokens.',
+      kind: 'number',
       type: 'int',
       min: 1,
       max: 50,
@@ -67,6 +98,7 @@
       label: 'Minimum Quality Score',
       description: 'Threshold required for a story to continue without intervention.',
       hint: 'Scores below this trigger escalation or termination workflows.',
+      kind: 'number',
       type: 'float',
       min: 0,
       max: 1,
@@ -76,6 +108,7 @@
       key: 'max_chapters_per_story',
       label: 'Max Chapters Per Story',
       description: 'Upper bound on the length of an autonomous run before forced completion.',
+      kind: 'number',
       type: 'int',
       min: 1,
       max: 500,
@@ -85,6 +118,7 @@
       key: 'min_active_stories',
       label: 'Minimum Active Stories',
       description: 'Floor for concurrently running stories maintained by the scheduler.',
+      kind: 'number',
       type: 'int',
       min: 0,
       max: 100,
@@ -94,6 +128,7 @@
       key: 'max_active_stories',
       label: 'Maximum Active Stories',
       description: 'Ceiling for simultaneous story generation jobs.',
+      kind: 'number',
       type: 'int',
       min: 1,
       max: 200,
@@ -103,10 +138,64 @@
       key: 'context_window_chapters',
       label: 'Context Window',
       description: 'Number of previous chapters retained when prompting the model.',
+      kind: 'number',
       type: 'int',
       min: 1,
       max: 50,
       step: 1
+    },
+    {
+      key: 'openai_model',
+      label: 'Chapter Model',
+      description: 'Primary model used for chapter generation prompts.',
+      hint: 'Enter a deployable model name such as gpt-4o-mini or its fine-tuned variant.',
+      kind: 'string',
+      placeholder: 'gpt-4o-mini'
+    },
+    {
+      key: 'openai_premise_model',
+      label: 'Premise Model',
+      description: 'Model leveraged for new story premises and theming.',
+      kind: 'string',
+      placeholder: 'gpt-4o-mini'
+    },
+    {
+      key: 'openai_eval_model',
+      label: 'Evaluation Model',
+      description: 'Model used by the quality gate to score chapter batches.',
+      kind: 'string',
+      placeholder: 'gpt-4o-mini'
+    },
+    {
+      key: 'openai_temperature_chapter',
+      label: 'Chapter Temperature',
+      description: 'Creativity dial for chapter generation (higher values increase chaos).',
+      hint: 'Range: 0 (deterministic) to 2 (maximum creativity).',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 2,
+      step: 0.05
+    },
+    {
+      key: 'openai_temperature_premise',
+      label: 'Premise Temperature',
+      description: 'Controls novelty when birthing new story premises and themes.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 2,
+      step: 0.05
+    },
+    {
+      key: 'openai_temperature_eval',
+      label: 'Evaluation Temperature',
+      description: 'Should stay low so the reviewer remains consistent and strict.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 2,
+      step: 0.05
     }
   ];
 
@@ -149,14 +238,24 @@
   let loggingOut = false;
   let logoutError: string | null = null;
 
-  const equals = (a: number, b: number, kind: NumericKind): boolean => {
-    if (kind === 'float') {
-      return Math.abs(a - b) < 1e-6;
+  const equals = (item: ConfigItem, nextValue: number | string): boolean => {
+    const currentValue = config[item.key] as number | string;
+    if (item.kind === 'string') {
+      return String(currentValue) === String(nextValue);
     }
-    return Math.round(a) === Math.round(b);
-  };
 
-  function parseValue(item: ConfigItem, raw: string): number {
+    const numericCurrent = currentValue as number;
+    const numericNext = nextValue as number;
+    if (item.type === 'float') {
+      return Math.abs(numericCurrent - numericNext) < 1e-6;
+    }
+    return Math.round(numericCurrent) === Math.round(numericNext);
+  }
+
+  function parseValue(item: ConfigItem, raw: string): number | string {
+    if (item.kind === 'string') {
+      return raw.trim();
+    }
     const value = Number(raw);
     return item.type === 'int' ? Math.round(value) : value;
   }
@@ -165,6 +264,11 @@
     if (!raw.trim()) {
       return 'A value is required.';
     }
+
+    if (item.kind === 'string') {
+      return null;
+    }
+
     const numeric = Number(raw);
     if (Number.isNaN(numeric)) {
       return 'Enter a numeric value.';
@@ -172,24 +276,25 @@
     if (item.type === 'int' && !Number.isInteger(numeric)) {
       return 'Enter a whole number.';
     }
-    const parsed = parseValue(item, raw);
-    if (parsed < item.min) {
+
+    const parsedNumber = parseValue(item, raw) as number;
+    if (parsedNumber < item.min) {
       return `Minimum value is ${item.min}.`;
     }
-    if (item.max !== undefined && parsed > item.max) {
+    if (item.max !== undefined && parsedNumber > item.max) {
       return `Maximum value is ${item.max}.`;
     }
     if (item.key === 'min_active_stories') {
       const maxRaw = inputs.max_active_stories;
       const maxValue = Number(maxRaw);
-      if (maxRaw.trim() && !Number.isNaN(maxValue) && parsed > maxValue) {
+      if (maxRaw.trim() && !Number.isNaN(maxValue) && parsedNumber > maxValue) {
         return 'Minimum active stories cannot exceed the maximum.';
       }
     }
     if (item.key === 'max_active_stories') {
       const minRaw = inputs.min_active_stories;
       const minValue = Number(minRaw);
-      if (minRaw.trim() && !Number.isNaN(minValue) && parsed < minValue) {
+      if (minRaw.trim() && !Number.isNaN(minValue) && parsedNumber < minValue) {
         return 'Maximum active stories must be at least the minimum.';
       }
     }
@@ -211,7 +316,7 @@
       return;
     }
     const parsed = parseValue(item, raw);
-    const dirty = !equals(parsed, config[item.key], item.type);
+    const dirty = !equals(item, parsed);
     dirtyFlags = { ...dirtyFlags, [item.key]: dirty };
   }
 
@@ -238,7 +343,7 @@
     }
 
     const parsed = parseValue(item, value);
-    const payload: Partial<ConfigValues> = { [item.key]: parsed };
+    const payload = { [item.key]: parsed } as Partial<RuntimeConfig>;
 
     try {
       savingKey = item.key;
@@ -380,12 +485,21 @@
               id={`config-${item.key}`}
               class:invalid={Boolean(errors[item.key])}
               class:dirty={dirtyFlags[item.key]}
-              type="number"
-              step={item.step}
-              min={item.min}
-              max={item.max ?? ''}
+              type={item.kind === 'string' ? 'text' : 'number'}
+              step={item.kind === 'number' ? item.step : undefined}
+              min={item.kind === 'number' ? item.min : undefined}
+              max={item.kind === 'number' ? item.max ?? undefined : undefined}
+              placeholder={item.kind === 'string' ? item.placeholder ?? '' : undefined}
+              autocapitalize="off"
+              spellcheck={item.kind === 'string' ? false : undefined}
               value={inputs[item.key]}
-              inputmode={item.type === 'int' ? 'numeric' : 'decimal'}
+              inputmode={
+                item.kind === 'number'
+                  ? item.type === 'int'
+                    ? 'numeric'
+                    : 'decimal'
+                  : 'text'
+              }
               on:input={(event) => handleInput(item, event.currentTarget.value)}
             />
             <button
