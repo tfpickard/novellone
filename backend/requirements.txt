@@ -11,4 +11,6 @@ alembic
 psycopg[binary]
 psycopg2-binary
 rich
+passlib[bcrypt]
+bcrypt<4.0.0
 

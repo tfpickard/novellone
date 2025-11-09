@@ -13,3 +13,4 @@ backend/.venv/
 .DS_Store
 .idea/
 pgdata/
+.venv

@@ -21,6 +21,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import selectinload
 
+from auth import AdminSession, require_admin, router as auth_router
 from background_worker import worker
 from config import get_settings
 from config_store import apply_config_updates, get_runtime_config
@@ -49,6 +50,9 @@ app.add_middleware(
 async def get_db_session():
     async with get_session() as session:
         yield session
+
+
+app.include_router(auth_router)
 
 
 SessionDep = Annotated[Any, Depends(get_db_session)]
@@ -204,13 +208,20 @@ class ConfigUpdate(BaseModel):
 
 
 @app.get("/api/config")
-async def get_public_config(session: SessionDep) -> dict[str, Any]:
+async def get_public_config(
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
     runtime = await get_runtime_config(session)
     return runtime.as_dict()
 
 
 @app.patch("/api/config")
-async def update_public_config(payload: ConfigUpdate, session: SessionDep) -> dict[str, Any]:
+async def update_public_config(
+    payload: ConfigUpdate,
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
     data = payload.model_dump(exclude_none=True)
     try:
         runtime = await apply_config_updates(session, data)
@@ -458,7 +469,10 @@ async def stories_ws(websocket: WebSocket) -> None:
 
 
 @app.post("/api/admin/spawn", status_code=201)
-async def admin_spawn_story(session: SessionDep) -> dict[str, Any]:
+async def admin_spawn_story(
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
     """Spawn a new story. If at max active stories, terminate the oldest active story first."""
     runtime_config = await get_runtime_config(session)
     
@@ -546,7 +560,10 @@ async def delete_story(story_id: uuid.UUID, session: SessionDep) -> dict[str, An
 
 
 @app.post("/api/admin/backfill-cover-images")
-async def admin_backfill_cover_images(session: SessionDep) -> dict[str, Any]:
+async def admin_backfill_cover_images(
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
     """Generate cover images for all completed stories without one."""
     stmt = select(Story).where(
         Story.status == "completed",
@@ -595,7 +612,10 @@ async def admin_backfill_cover_images(session: SessionDep) -> dict[str, Any]:
 
 
 @app.post("/api/admin/reset", status_code=202)
-async def admin_reset_system(session: SessionDep) -> dict[str, Any]:
+async def admin_reset_system(
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
     """Clear all stories and reset runtime configuration to defaults."""
     story_count = (
         await session.execute(select(func.count()).select_from(Story))

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto, invalidateAll } from '$app/navigation';
   import { updateConfig, spawnStory, resetSystem } from '$lib/api';
   import type { RuntimeConfig } from '$lib/api';
   import type { PageData } from './$types';
@@ -145,6 +146,8 @@
   let spawnError: string | null = null;
   let resetting = false;
   let resetError: string | null = null;
+  let loggingOut = false;
+  let logoutError: string | null = null;
 
   const equals = (a: number, b: number, kind: NumericKind): boolean => {
     if (kind === 'float') {
@@ -286,6 +289,41 @@
       resetting = false;
     }
   }
+
+  async function handleSignOut() {
+    if (loggingOut) return;
+    loggingOut = true;
+    logoutError = null;
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        let message = `Failed to sign out (${response.status})`;
+        try {
+          const payload = await response.json();
+          if (typeof payload === 'string' && payload) {
+            message = payload;
+          } else if (payload?.detail) {
+            message = Array.isArray(payload.detail)
+              ? payload.detail.map((entry: any) => entry?.msg ?? entry).join(', ')
+              : payload.detail;
+          }
+        } catch (error) {
+          void error;
+        }
+        throw new Error(message);
+      }
+      await invalidateAll();
+      await goto('/login', { replaceState: true });
+    } catch (error) {
+      logoutError =
+        error instanceof Error && error.message ? error.message : 'Unable to sign out right now.';
+    } finally {
+      loggingOut = false;
+    }
+  }
 </script>
 
 <div class="page-container config-page">
@@ -295,6 +333,12 @@
       Reference values that guide how the autonomous story engine schedules new chapters,
       evaluates quality, and balances load across active narratives.
     </p>
+    <div class="session-controls">
+      <span>Signed in as {data.user?.username ?? 'admin'}</span>
+      <button on:click={handleSignOut} disabled={loggingOut}>
+        {loggingOut ? 'Signing out…' : 'Sign out'}
+      </button>
+    </div>
   </header>
 
   <section class="admin-actions">
@@ -317,6 +361,9 @@
   {/if}
   {#if resetError}
     <div class="banner error">{resetError}</div>
+  {/if}
+  {#if logoutError}
+    <div class="banner error">{logoutError}</div>
   {/if}
 
   <section class="config-grid">
@@ -397,6 +444,46 @@
     max-width: 760px;
     line-height: 1.6;
     opacity: 0.85;
+  }
+
+  .session-controls {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .session-controls span {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    opacity: 0.7;
+  }
+
+  .session-controls button {
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 999px;
+    background: transparent;
+    color: #e2e8f0;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  }
+
+  .session-controls button:hover:not(:disabled) {
+    border-color: rgba(96, 165, 250, 0.6);
+    color: #bfdbfe;
+    transform: translateY(-1px);
+  }
+
+  .session-controls button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .banner {
