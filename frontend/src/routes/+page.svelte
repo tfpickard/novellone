@@ -84,7 +84,7 @@
 <div class="page-container">
   <header class="hero">
     <div>
-      <h1>Hurl Unmasks Recursive Literature Leaking Out Light</h1>
+      <h1>Hurl Unmasks Recursive Literature Leaking Out Love</h1>
       <p>Autonomous science fiction tales evolving in real time.</p>
     </div>
     <div class="hero-right">
