@@ -134,3 +134,108 @@ export function generateChapter(id: string): Promise<any> {
   });
 }
 
+// Universe Prompt API
+
+export type UniversePromptSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  character_weight: number;
+  setting_weight: number;
+  theme_weight: number;
+  lore_weight: number;
+  element_count: number;
+};
+
+export type UniverseElement = {
+  id: string;
+  universe_prompt_id: string;
+  source_story_id: string;
+  element_type: string;
+  name: string;
+  description: string | null;
+  metadata: any;
+  extracted_at: string;
+};
+
+export type UniversePromptDetail = UniversePromptSummary & {
+  characters: Record<string, any> | null;
+  settings: Record<string, any> | null;
+  themes: Record<string, any> | null;
+  lore: Record<string, any> | null;
+  narrative_constraints: string[] | null;
+  elements: UniverseElement[];
+};
+
+export type UniversePromptCreate = {
+  name: string;
+  description?: string | null;
+  characters?: Record<string, any> | null;
+  settings?: Record<string, any> | null;
+  themes?: Record<string, any> | null;
+  lore?: Record<string, any> | null;
+  narrative_constraints?: string[] | null;
+  character_weight?: number;
+  setting_weight?: number;
+  theme_weight?: number;
+  lore_weight?: number;
+};
+
+export type UniversePromptUpdate = Partial<UniversePromptCreate>;
+
+export type CohesionMetric = {
+  id: string;
+  story_id: string;
+  universe_prompt_id: string | null;
+  character_recurrence_score: number;
+  thematic_overlap_score: number;
+  timeline_continuity_score: number;
+  overall_cohesion_score: number;
+  details: any;
+  calculated_at: string;
+};
+
+export function getUniversePrompts(params?: URLSearchParams): Promise<{ total: number; page: number; page_size: number; items: UniversePromptSummary[] }> {
+  const queryString = params ? `?${params.toString()}` : '';
+  return request(`/api/universe-prompts${queryString}`);
+}
+
+export function getUniversePrompt(id: string): Promise<UniversePromptDetail> {
+  return request(`/api/universe-prompts/${id}`);
+}
+
+export function createUniversePrompt(payload: UniversePromptCreate): Promise<UniversePromptDetail> {
+  return request('/api/universe-prompts', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateUniversePrompt(id: string, payload: UniversePromptUpdate): Promise<UniversePromptDetail> {
+  return request(`/api/universe-prompts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteUniversePrompt(id: string): Promise<{ message: string; deleted: boolean }> {
+  return request(`/api/universe-prompts/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+export function extractUniverseElements(promptId: string, storyIds: string[]): Promise<{ message: string; universe_prompt_id: string; story_count: number }> {
+  return request(`/api/universe-prompts/${promptId}/extract`, {
+    method: 'POST',
+    body: JSON.stringify({ universe_prompt_id: promptId, story_ids: storyIds })
+  });
+}
+
+export function getCohesionMetrics(params?: URLSearchParams): Promise<{ items: CohesionMetric[]; count: number }> {
+  const queryString = params ? `?${params.toString()}` : '';
+  return request(`/api/cohesion-metrics${queryString}`);
+}
+
