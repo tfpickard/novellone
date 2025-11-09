@@ -84,6 +84,21 @@ Migrations are stored in `backend/alembic/versions/`:
 
 ## Troubleshooting
 
+### Error: "Can't locate revision identified by '0006'" (or similar)
+
+This happens when the database has a migration version that doesn't exist in the code (e.g., from a deleted migration file). To fix:
+
+```bash
+# Option 1: Auto-fix (resets to last valid version)
+docker compose -f docker-compose.prod.yml run --rm backend python fix_migration_state.py
+
+# Option 2: Interactive fix (lets you choose)
+docker compose -f docker-compose.prod.yml run --rm backend python check_migration_state.py
+
+# Then retry migrations
+docker compose -f docker-compose.prod.yml up migrate
+```
+
 ### Migration container exits immediately
 
 Check the logs:
