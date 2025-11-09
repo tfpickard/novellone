@@ -22,6 +22,18 @@ services:
     # Only expose to internal network, not to host
     # No ports mapping - accessed only by backend
 
+  migrate:
+    build: ./backend
+    container_name: novellone_migrate
+    env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - novellone_network
+    command: python migrate.py
+    restart: "no"  # Run once and exit
+
   backend:
     build: ./backend
     container_name: novellone_backend
@@ -30,13 +42,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8000:8000"  # Bind to localhost only (nginx proxies)
     networks:
       - novellone_network
     volumes:
       - ./logs/backend:/app/logs
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s

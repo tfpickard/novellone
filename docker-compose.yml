@@ -12,15 +12,26 @@ services:
       interval: 10s
       retries: 5
 
+  migrate:
+    build: ./backend
+    env_file: ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python migrate.py
+    restart: "no"  # Run once and exit
+
   backend:
     build: ./backend
     env_file: ./.env
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./logs/backend:/app/logs
     develop:
