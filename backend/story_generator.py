@@ -472,6 +472,7 @@ def _clean_chapter_content(raw: str) -> str:
             if isinstance(decoded, str):
                 text = decoded.strip()
         except json.JSONDecodeError:
+            # If decoding fails, continue with the original text; not all inputs are valid JSON.
             pass
 
     # Handle nested JSON object containing chapter_content
