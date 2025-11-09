@@ -54,6 +54,7 @@ async def get_db_session():
 SessionDep = Annotated[Any, Depends(get_db_session)]
 class ChapterRead(BaseModel):
     id: uuid.UUID
+    story_id: uuid.UUID
     chapter_number: int
     content: str
     created_at: datetime
@@ -69,6 +70,7 @@ class ChapterRead(BaseModel):
     def from_model(cls, chapter: Chapter) -> "ChapterRead":
         return cls(
             id=chapter.id,
+            story_id=chapter.story_id,
             chapter_number=chapter.chapter_number,
             content=chapter.content,
             created_at=chapter.created_at,
@@ -322,6 +324,48 @@ async def kill_story(
         logger.info("Kill requested for already completed story %s", story.title)
 
     return await get_story(story_id, session)
+
+
+@app.post("/api/stories/{story_id}/generate", status_code=201)
+async def generate_chapter_now(story_id: uuid.UUID, session: SessionDep) -> dict[str, Any]:
+    stmt = (
+        select(Story)
+        .where(Story.id == story_id)
+        .options(selectinload(Story.chapters), selectinload(Story.evaluations))
+    )
+    story = (await session.execute(stmt)).scalars().first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    if story.status != "active":
+        raise HTTPException(status_code=400, detail="Only active stories can generate new chapters")
+
+    runtime_config = await get_runtime_config(session)
+    if story.chapter_count >= runtime_config.max_chapters_per_story:
+        raise HTTPException(status_code=400, detail="Story already reached the maximum chapter count")
+
+    chapter = await worker._create_chapter(session, story, runtime_config)
+
+    await session.flush()
+    await session.refresh(story, attribute_names=["chapter_count", "status"])
+
+    if (
+        story.chapter_count >= settings.min_chapters_before_eval
+        and story.chapter_count % runtime_config.evaluation_interval_chapters == 0
+    ):
+        await worker._evaluate_story(session, story, runtime_config)
+
+    await session.commit()
+
+    refreshed = (await session.execute(stmt)).scalars().first()
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Story not found after generation")
+
+    logger.info(
+        "Manual chapter generation requested for story %s -> chapter %s",
+        refreshed.title,
+        chapter.chapter_number,
+    )
+    return StoryDetail.from_model(refreshed).model_dump()
 
 
 @app.post("/api/stories", status_code=201)

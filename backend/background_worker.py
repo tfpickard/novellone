@@ -179,6 +179,7 @@ class BackgroundWorker:
             tokens,
             chapter.generation_time_ms,
         )
+        return chapter
 
     async def _evaluate_story(
         self, session, story: Story, config: RuntimeConfig

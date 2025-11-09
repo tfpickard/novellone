@@ -102,3 +102,9 @@ export function updateConfig(payload: Partial<RuntimeConfig>): Promise<RuntimeCo
   });
 }
 
+export function generateChapter(id: string): Promise<any> {
+  return request(`/api/stories/${id}/generate`, {
+    method: 'POST'
+  });
+}
+

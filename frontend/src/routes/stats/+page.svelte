@@ -2,6 +2,18 @@
   import type { PageData } from './$types';
 
   export let data: PageData;
+
+  const chapterLink = (item: PageData['stats']['recent_activity'][number]) =>
+    `/story/${item.story_id}#chapter-${item.chapter_number}`;
+
+  const preview = (text: string, limit = 160) => {
+    if (!text) return '';
+    const normalised = text.replace(/\s+/g, ' ').trim();
+    if (normalised.length <= limit) {
+      return normalised;
+    }
+    return `${normalised.slice(0, limit - 1).trimEnd()}…`;
+  };
 </script>
 
 <div class="page-container stats-page">
@@ -76,11 +88,13 @@
     <ul>
       {#each data.stats.recent_activity as item}
         <li>
-          <div>
-            <strong>Chapter {item.chapter_number}</strong>
-            <span>{new Date(item.created_at).toLocaleString()}</span>
-          </div>
-          <p>{item.content.slice(0, 160)}...</p>
+          <a class="activity-link" href={chapterLink(item)}>
+            <div>
+              <strong>Chapter {item.chapter_number}</strong>
+              <span>{new Date(item.created_at).toLocaleString()}</span>
+            </div>
+            <p>{preview(item.content)}</p>
+          </a>
         </li>
       {/each}
     </ul>
@@ -141,6 +155,18 @@
     border-radius: 18px;
     padding: 1.5rem;
     border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .activity a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .activity a:hover strong {
+    text-decoration: underline;
   }
 
   .activity strong {
