@@ -244,6 +244,11 @@ class ConfigUpdate(BaseModel):
     openai_temperature_chapter: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
     openai_temperature_premise: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
     openai_temperature_eval: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
+    premise_prompt_refresh_interval: Annotated[int | None, Field(default=None, ge=1, le=200)] = None
+    premise_prompt_stats_window: Annotated[int | None, Field(default=None, ge=1, le=200)] = None
+    premise_prompt_variation_strength: Annotated[
+        float | None, Field(default=None, ge=0.0, le=1.0)
+    ] = None
 
 
 @app.get("/api/config")
