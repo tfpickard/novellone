@@ -27,7 +27,17 @@ from config import get_settings
 from config_store import apply_config_updates, get_runtime_config
 from logging_config import configure_logging
 from database import get_session
-from models import Chapter, Story, StoryEvaluation, SystemConfig
+from models import (
+    Chapter,
+    Story,
+    StoryEntity,
+    StoryEvaluation,
+    StoryTheme,
+    StoryUniverseLink,
+    SystemConfig,
+    UniverseCluster,
+    UniverseClusterMembership,
+)
 from story_generator import (
     generate_cover_image,
     get_hurllol_banner,
@@ -134,6 +144,42 @@ class StoryEvaluationRead(BaseModel):
         )
 
 
+class StoryRelatedItem(BaseModel):
+    story_id: uuid.UUID
+    title: str
+    weight: float
+    shared_entities: list[str] = Field(default_factory=list)
+    shared_themes: list[str] = Field(default_factory=list)
+
+
+class StoryUniverseContext(BaseModel):
+    cluster_id: uuid.UUID | None = None
+    cluster_label: str | None = None
+    cluster_size: int = 0
+    cohesion: float | None = None
+    related_stories: list[StoryRelatedItem] = Field(default_factory=list)
+
+
+class UniverseClusterSummary(BaseModel):
+    cluster_id: uuid.UUID
+    label: str | None
+    size: int
+    cohesion: float
+    top_entities: list[str] = Field(default_factory=list)
+    top_themes: list[str] = Field(default_factory=list)
+
+
+class EntityAggregate(BaseModel):
+    name: str
+    story_count: int
+    total_occurrences: int
+
+
+class ThemeAggregate(BaseModel):
+    name: str
+    story_count: int
+
+
 class StorySummary(BaseModel):
     id: uuid.UUID
     title: str
@@ -159,9 +205,15 @@ class StorySummary(BaseModel):
     ridiculousness_increment: float = 0.05
     insanity_increment: float = 0.05
     aggregate_stats: dict[str, Any] | None = None
+    universe: StoryUniverseContext | None = None
 
     @classmethod
-    def from_model(cls, story: Story, include_stats: bool = False) -> "StorySummary":
+    def from_model(
+        cls,
+        story: Story,
+        include_stats: bool = False,
+        universe: StoryUniverseContext | None = None,
+    ) -> "StorySummary":
         aggregate_stats = None
         estimated_reading_time = None
         if include_stats and story.chapters:
@@ -198,6 +250,7 @@ class StorySummary(BaseModel):
             ridiculousness_increment=story.ridiculousness_increment,
             insanity_increment=story.insanity_increment,
             aggregate_stats=aggregate_stats,
+            universe=universe,
         )
 
 
@@ -207,9 +260,13 @@ class StoryDetail(StorySummary):
     chapters: list[ChapterRead]
 
     @classmethod
-    def from_model(cls, story: Story) -> "StoryDetail":
+    def from_model(
+        cls,
+        story: Story,
+        universe: StoryUniverseContext | None = None,
+    ) -> "StoryDetail":
         return cls(
-            **StorySummary.from_model(story, include_stats=True).model_dump(),
+            **StorySummary.from_model(story, include_stats=True, universe=universe).model_dump(),
             completion_reason=story.completion_reason,
             evaluations=[StoryEvaluationRead.from_model(e) for e in story.evaluations],
             chapters=[ChapterRead.from_model(c, include_stats=True) for c in story.chapters],
@@ -379,7 +436,81 @@ async def get_story(story_id: uuid.UUID, session: SessionDep) -> dict[str, Any]:
     story = result.scalars().first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-    return StoryDetail.from_model(story).model_dump()
+    universe_context = await _get_story_universe_context(session, story.id)
+    return StoryDetail.from_model(story, universe=universe_context).model_dump()
+
+
+async def _get_story_universe_context(
+    session: Any,
+    story_id: uuid.UUID,
+) -> StoryUniverseContext | None:
+    membership_stmt = (
+        select(UniverseClusterMembership, UniverseCluster)
+        .join(UniverseCluster, UniverseClusterMembership.cluster_id == UniverseCluster.id)
+        .where(UniverseClusterMembership.story_id == story_id)
+    )
+    membership_row = (await session.execute(membership_stmt)).first()
+
+    cluster_id: uuid.UUID | None = None
+    cluster_label: str | None = None
+    cluster_size = 0
+    cohesion: float | None = None
+
+    if membership_row:
+        _membership, cluster = membership_row
+        cluster_id = cluster.id
+        cluster_label = cluster.label
+        cluster_size = cluster.size
+        cohesion = cluster.cohesion
+
+    links_stmt = select(StoryUniverseLink).where(
+        (StoryUniverseLink.source_story_id == story_id)
+        | (StoryUniverseLink.target_story_id == story_id)
+    )
+    links = list((await session.execute(links_stmt)).scalars())
+
+    related_ids = {
+        link.target_story_id if link.source_story_id == story_id else link.source_story_id
+        for link in links
+    }
+
+    titles: dict[uuid.UUID, str] = {}
+    if related_ids:
+        title_rows = (
+            await session.execute(
+                select(Story.id, Story.title).where(Story.id.in_(related_ids))
+            )
+        ).all()
+        titles = {row.id: row.title for row in title_rows}
+
+    related_items: list[StoryRelatedItem] = []
+    for link in links:
+        other_story_id = (
+            link.target_story_id
+            if link.source_story_id == story_id
+            else link.source_story_id
+        )
+        related_items.append(
+            StoryRelatedItem(
+                story_id=other_story_id,
+                title=titles.get(other_story_id, ""),
+                weight=link.weight,
+                shared_entities=link.shared_entities or [],
+                shared_themes=link.shared_themes or [],
+            )
+        )
+
+    if not cluster_id and not related_items:
+        return StoryUniverseContext()
+
+    related_items.sort(key=lambda item: item.weight, reverse=True)
+    return StoryUniverseContext(
+        cluster_id=cluster_id,
+        cluster_label=cluster_label,
+        cluster_size=cluster_size,
+        cohesion=cohesion,
+        related_stories=related_items,
+    )
 
 
 @app.get("/api/stories/{story_id}/theme")
@@ -471,7 +602,8 @@ async def generate_chapter_now(story_id: uuid.UUID, session: SessionDep) -> dict
         raise HTTPException(status_code=404, detail="Story not found after generation")
 
     logger.info("Manual chapter generation requested for story %s", refreshed.title)
-    return StoryDetail.from_model(refreshed).model_dump()
+    universe_context = await _get_story_universe_context(session, refreshed.id)
+    return StoryDetail.from_model(refreshed, universe=universe_context).model_dump()
 
 
 @app.post("/api/stories", status_code=201)
@@ -492,7 +624,70 @@ async def create_story(payload: StoryCreate, session: SessionDep) -> dict[str, A
     story_obj = (await session.execute(stmt)).scalars().first()
     if not story_obj:
         raise HTTPException(status_code=500, detail="Failed to load created story")
-    return StoryDetail.from_model(story_obj).model_dump()
+    universe_context = await _get_story_universe_context(session, story_obj.id)
+    return StoryDetail.from_model(story_obj, universe=universe_context).model_dump()
+
+
+@app.get("/api/universe/overview")
+async def get_universe_overview(session: SessionDep) -> dict[str, Any]:
+    cluster_rows = list((await session.execute(select(UniverseCluster))).scalars())
+    clusters = [
+        UniverseClusterSummary(
+            cluster_id=row.id,
+            label=row.label,
+            size=row.size,
+            cohesion=row.cohesion,
+            top_entities=(row.metadata or {}).get("top_entities", []),
+            top_themes=(row.metadata or {}).get("top_themes", []),
+        ).model_dump()
+        for row in cluster_rows
+    ]
+
+    entity_rows = (
+        await session.execute(
+            select(
+                StoryEntity.name,
+                func.count(StoryEntity.story_id).label("story_count"),
+                func.sum(StoryEntity.occurrence_count).label("occurrences"),
+            )
+            .group_by(StoryEntity.name)
+            .order_by(func.sum(StoryEntity.occurrence_count).desc())
+            .limit(10)
+        )
+    ).all()
+    top_entities = [
+        EntityAggregate(
+            name=row.name,
+            story_count=int(row.story_count or 0),
+            total_occurrences=int(row.occurrences or 0),
+        ).model_dump()
+        for row in entity_rows
+    ]
+
+    theme_rows = (
+        await session.execute(
+            select(
+                StoryTheme.name,
+                func.count(StoryTheme.story_id).label("story_count"),
+            )
+            .group_by(StoryTheme.name)
+            .order_by(func.count(StoryTheme.story_id).desc())
+            .limit(10)
+        )
+    ).all()
+    top_themes = [
+        ThemeAggregate(
+            name=row.name,
+            story_count=int(row.story_count or 0),
+        ).model_dump()
+        for row in theme_rows
+    ]
+
+    return {
+        "clusters": clusters,
+        "top_entities": top_entities,
+        "top_themes": top_themes,
+    }
 
 
 @app.get("/api/stats")

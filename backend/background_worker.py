@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import uuid
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -11,6 +12,7 @@ from config import get_settings
 from config_store import RuntimeConfig, get_runtime_config
 from database import get_session
 from models import Chapter, Story, StoryEvaluation
+from meta import CorpusExtractionService, EntityExtractionService, UniverseGraphService
 from story_evaluator import evaluate_story
 from story_generator import generate_chapter, generate_cover_image, spawn_new_story
 from websocket_manager import ws_manager
@@ -24,6 +26,11 @@ class BackgroundWorker:
     def __init__(self) -> None:
         self.scheduler = AsyncIOScheduler()
         self._lock = asyncio.Lock()
+        self._corpus_service = CorpusExtractionService()
+        self._entity_service = EntityExtractionService()
+        self._universe_service = UniverseGraphService()
+        self._stories_to_refresh: set[uuid.UUID] = set()
+        self._last_universe_refresh: datetime | None = None
 
     async def start(self) -> None:
         if not self.scheduler.running:
@@ -77,6 +84,9 @@ class BackgroundWorker:
             await session.commit()
 
             await self._maintain_story_count(session, runtime_config)
+            await session.commit()
+
+            await self._run_meta_analysis(session, active_stories)
             await session.commit()
 
             cycle_duration_ms = (time.perf_counter() - cycle_start) * 1000
@@ -152,6 +162,7 @@ class BackgroundWorker:
         story.last_chapter_at = datetime.utcnow()
         tokens = chapter_data.get("tokens_used") or 0
         story.total_tokens = (story.total_tokens or 0) + tokens
+        self._stories_to_refresh.add(story.id)
         await session.flush()
         await session.refresh(chapter)
         if settings.enable_websocket:
@@ -238,6 +249,7 @@ class BackgroundWorker:
             story.completed_at = datetime.utcnow()
             story.completion_reason = reason
             await session.flush()
+            self._stories_to_refresh.add(story.id)
             
             # Generate cover image for the completed story (only if we don't have one)
             if not story.cover_image_url:
@@ -312,7 +324,41 @@ class BackgroundWorker:
         )
         session.add(story)
         await session.flush()
+        self._stories_to_refresh.add(story.id)
         logger.info("Spawned new story: %s", story.title)
+
+    async def _run_meta_analysis(self, session, loaded_stories: list[Story]) -> None:
+        candidates = set(self._stories_to_refresh)
+        needs_universe = self._needs_universe_refresh()
+        if not candidates and not needs_universe:
+            return
+
+        stories_by_id = {story.id: story for story in loaded_stories}
+        missing_ids = [story_id for story_id in candidates if story_id not in stories_by_id]
+        if missing_ids:
+            stmt = (
+                select(Story)
+                .where(Story.id.in_(missing_ids))
+                .options(selectinload(Story.chapters))
+            )
+            fetched = list((await session.execute(stmt)).scalars())
+            stories_by_id.update({story.id: story for story in fetched})
+
+        target_stories = [stories_by_id[story_id] for story_id in candidates if story_id in stories_by_id]
+
+        if target_stories:
+            corpora = await self._corpus_service.refresh_story_corpora(session, target_stories)
+            await self._entity_service.refresh_entities(session, target_stories, corpora)
+            self._stories_to_refresh.difference_update({story.id for story in target_stories})
+
+        if needs_universe:
+            await self._universe_service.refresh_universe(session)
+            self._last_universe_refresh = datetime.utcnow()
+
+    def _needs_universe_refresh(self) -> bool:
+        if self._last_universe_refresh is None:
+            return True
+        return (datetime.utcnow() - self._last_universe_refresh) >= timedelta(hours=6)
 
 
 def create_worker() -> BackgroundWorker:
