@@ -6,7 +6,7 @@ export function renderMarkdown(text: string | null | undefined): string {
     return '';
   }
 
-  const html = marked.parse(text, {
+  const html = marked(text, {
     breaks: true,
     gfm: true
   });
