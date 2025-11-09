@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { updateConfig } from '$lib/api';
+  import { updateConfig, spawnStory, resetSystem } from '$lib/api';
   import type { RuntimeConfig } from '$lib/api';
   import type { PageData } from './$types';
 
@@ -141,6 +141,10 @@
   let savingKey: ConfigKey | null = null;
   let successMessage: string | null = null;
   let errorMessage: string | null = null;
+  let spawning = false;
+  let spawnError: string | null = null;
+  let resetting = false;
+  let resetError: string | null = null;
 
   const equals = (a: number, b: number, kind: NumericKind): boolean => {
     if (kind === 'float') {
@@ -245,6 +249,43 @@
       savingKey = null;
     }
   }
+
+  async function handleSpawnStory() {
+    if (spawning) return;
+    spawning = true;
+    spawnError = null;
+    resetBanners();
+    try {
+      const story = await spawnStory();
+      successMessage = `Spawned story "${story.title}".`;
+    } catch (error) {
+      console.error('Failed to spawn story', error);
+      spawnError = error instanceof Error ? error.message : 'Failed to generate story.';
+    } finally {
+      spawning = false;
+    }
+  }
+
+  async function handleResetSystem() {
+    if (resetting) return;
+    const confirmed = window.confirm(
+      'This will remove all stories and reset the system configuration. Continue?'
+    );
+    if (!confirmed) return;
+
+    resetting = true;
+    resetError = null;
+    resetBanners();
+    try {
+      const result = await resetSystem();
+      successMessage = `System reset: ${result.deleted_stories} stories deleted.`;
+    } catch (error) {
+      console.error('Failed to reset system', error);
+      resetError = error instanceof Error ? error.message : 'Failed to reset system.';
+    } finally {
+      resetting = false;
+    }
+  }
 </script>
 
 <div class="page-container config-page">
@@ -256,11 +297,26 @@
     </p>
   </header>
 
+  <section class="admin-actions">
+    <button on:click={handleSpawnStory} disabled={spawning}>
+      {spawning ? 'Generating…' : '+ Generate New Story'}
+    </button>
+    <button class="danger" on:click={handleResetSystem} disabled={resetting}>
+      {resetting ? 'Clearing…' : 'Reset System'}
+    </button>
+  </section>
+
   {#if successMessage}
     <div class="banner success">{successMessage}</div>
   {/if}
   {#if errorMessage}
     <div class="banner error">{errorMessage}</div>
+  {/if}
+  {#if spawnError}
+    <div class="banner error">{spawnError}</div>
+  {/if}
+  {#if resetError}
+    <div class="banner error">{resetError}</div>
   {/if}
 
   <section class="config-grid">
@@ -360,6 +416,48 @@
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.4);
     color: #fecaca;
+  }
+
+  .admin-actions {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .admin-actions button {
+    border: none;
+    border-radius: 999px;
+    padding: 0.7rem 1.6rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .admin-actions button:not(.danger) {
+    background: linear-gradient(135deg, #38bdf8, #6366f1);
+    color: #0f172a;
+    box-shadow: 0 12px 28px rgba(56, 189, 248, 0.35);
+  }
+
+  .admin-actions button.danger {
+    background: rgba(220, 38, 38, 0.2);
+    color: #fca5a5;
+    border: 1px solid rgba(252, 165, 165, 0.6);
+    box-shadow: 0 10px 24px rgba(220, 38, 38, 0.25);
+  }
+
+  .admin-actions button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .admin-actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 
   .config-grid {

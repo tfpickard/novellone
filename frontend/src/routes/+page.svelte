@@ -2,7 +2,6 @@
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
   import { createThemeAction, type StoryTheme } from '$lib/theme';
-  import { spawnStory, resetSystem } from '$lib/api';
 
   export let data: PageData;
 
@@ -86,38 +85,11 @@
   $: displayStories = [...filteredStories].sort(sortComparator);
 
   async function handleSpawnStory() {
-    if (spawning) return;
-    spawning = true;
-    spawnError = null;
-    try {
-      const newStory = await spawnStory();
-      // Navigate to the new story
-      await goto(`/story/${newStory.id}`);
-    } catch (error) {
-      console.error('Failed to spawn story', error);
-      spawnError = error instanceof Error ? error.message : 'Failed to generate new story';
-      spawning = false;
-    }
+    await goto('/config');
   }
 
   async function handleResetSystem() {
-    if (resetting) return;
-    const confirmed = window.confirm(
-      'This will remove all stories and reset the system configuration. Continue?'
-    );
-    if (!confirmed) return;
-
-    resetting = true;
-    resetError = null;
-    try {
-      await resetSystem();
-      await goto('/');
-      window.location.reload();
-    } catch (error) {
-      console.error('Failed to reset system', error);
-      resetError = error instanceof Error ? error.message : 'Failed to reset system';
-      resetting = false;
-    }
+    await goto('/config');
   }
 </script>
 
@@ -129,19 +101,13 @@
     </div>
     <div class="hero-right">
       <div class="actions">
-        <button class="spawn-button" on:click={handleSpawnStory} disabled={spawning}>
-          {spawning ? 'Generating...' : '+ Generate New Story'}
-        </button>
-        <button class="reset-button" on:click={handleResetSystem} disabled={resetting}>
-          {resetting ? 'Clearing…' : 'Reset System'}
-        </button>
+        <a class="spawn-button" href="/config">
+          + Generate New Story
+        </a>
+        <a class="reset-button" href="/config">
+          Reset System
+        </a>
       </div>
-      {#if spawnError}
-        <p class="error-text">{spawnError}</p>
-      {/if}
-      {#if resetError}
-        <p class="error-text">{resetError}</p>
-      {/if}
       <div class="stats">
         <div>
           <span>Active</span>
@@ -301,6 +267,10 @@
     box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .spawn-button:hover:enabled {
@@ -325,6 +295,10 @@
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .reset-button:hover:enabled {

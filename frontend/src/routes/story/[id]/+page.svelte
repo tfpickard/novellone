@@ -24,6 +24,7 @@
   let deleteError: string | null = null;
   let generating = false;
   let generateError: string | null = null;
+  const pendingChapterIds: Set<string> = new Set();
 
   let theme = story.theme_json as StoryTheme;
   $: theme = story.theme_json as StoryTheme;
@@ -39,6 +40,13 @@
     }
     if (message.story_id !== story.id) return;
     if (message.type === 'new_chapter') {
+      if (pendingChapterIds.has(message.chapter.id)) {
+        pendingChapterIds.delete(message.chapter.id);
+        return;
+      }
+      if (story.chapters.some((existing) => existing.id === message.chapter.id)) {
+        return;
+      }
       story = {
         ...story,
         chapters: [...story.chapters, message.chapter],
@@ -109,6 +117,8 @@
     try {
       const updated = await generateChapterRequest(story.id);
       story = updated;
+      pendingChapterIds.clear();
+      updated.chapters.forEach((chapter) => pendingChapterIds.add(chapter.id));
       await tick();
       const last = document.querySelector('.chapter:last-of-type');
       last?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -117,6 +127,11 @@
       generateError = error instanceof Error ? error.message : 'Failed to generate chapter';
     } finally {
       generating = false;
+      Array.from(pendingChapterIds).forEach((id) => {
+        if (!story.chapters.some((chapter) => chapter.id === id)) {
+          pendingChapterIds.delete(id);
+        }
+      });
     }
   }
 
