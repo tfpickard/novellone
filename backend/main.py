@@ -28,7 +28,13 @@ from config_store import apply_config_updates, get_runtime_config
 from logging_config import configure_logging
 from database import get_session
 from models import Chapter, Story, StoryEvaluation, SystemConfig
-from story_generator import generate_cover_image, spawn_new_story
+from story_generator import (
+    generate_cover_image,
+    get_hurllol_banner,
+    get_premise_prompt_state,
+    spawn_new_story,
+    update_premise_prompt_state,
+)
 from text_stats import calculate_text_stats, calculate_aggregate_stats
 from websocket_manager import ws_manager
 
@@ -244,6 +250,34 @@ class ConfigUpdate(BaseModel):
     openai_temperature_chapter: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
     openai_temperature_premise: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
     openai_temperature_eval: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
+    premise_prompt_refresh_interval: Annotated[int | None, Field(default=None, ge=1, le=200)] = None
+    premise_prompt_stats_window: Annotated[int | None, Field(default=None, ge=1, le=200)] = None
+    premise_prompt_variation_strength: Annotated[
+        float | None, Field(default=None, ge=0.0, le=1.0)
+    ] = None
+
+
+class PromptUpdate(BaseModel):
+    directives: list[str] | None = None
+    rationale: str | None = None
+
+
+def _format_prompt_state(state: dict[str, Any]) -> dict[str, Any]:
+    raw_directives = state.get("directives") or []
+    directives = [str(item).strip() for item in raw_directives if str(item).strip()]
+    raw_components = state.get("hurllol_title_components") or []
+    components = [str(component).strip() for component in raw_components if str(component).strip()]
+    return {
+        "directives": directives,
+        "rationale": state.get("rationale"),
+        "generated_at": state.get("generated_at"),
+        "variation_strength": state.get("variation_strength"),
+        "manual_override": bool(state.get("manual_override")),
+        "stats_snapshot": state.get("stats_snapshot"),
+        "hurllol_title": state.get("hurllol_title"),
+        "hurllol_title_components": components,
+        "hurllol_title_generated_at": state.get("hurllol_title_generated_at"),
+    }
 
 
 @app.get("/api/config")
@@ -268,6 +302,41 @@ async def update_public_config(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await session.commit()
     return runtime.as_dict()
+
+
+@app.get("/api/prompts")
+async def get_prompt_state(
+    session: SessionDep, _: AdminSession = Depends(require_admin)
+) -> dict[str, Any]:
+    state = await get_premise_prompt_state(session)
+    await session.commit()
+    return {"premise": _format_prompt_state(state)}
+
+
+@app.patch("/api/prompts")
+async def patch_prompt_state(
+    payload: PromptUpdate,
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    state = await update_premise_prompt_state(
+        session,
+        directives=payload.directives,
+        rationale=payload.rationale,
+    )
+    await session.commit()
+    return {"premise": _format_prompt_state(state)}
+
+
+@app.get("/api/hurllol")
+async def get_hurllol_title(session: SessionDep) -> dict[str, Any]:
+    banner = await get_hurllol_banner(session)
+    await session.commit()
+    return {
+        "title": banner.get("title"),
+        "components": banner.get("components", []),
+        "generated_at": banner.get("generated_at"),
+    }
 
 
 @app.get("/api/stories")

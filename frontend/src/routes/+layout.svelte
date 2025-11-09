@@ -1,5 +1,10 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import type { LayoutData } from './$types';
+
+  export let data: LayoutData;
+
+  const fallbackTitle = 'Hurl Unmasks Recursive Literature Leaking Out Love';
 
   type NavItem = {
     href: string;
@@ -26,15 +31,19 @@
   ];
 
   $: currentPath = $page.url.pathname;
+  $: hurllolTitle =
+    (data?.hurllol?.title && typeof data.hurllol.title === 'string'
+      ? data.hurllol.title
+      : '') || fallbackTitle;
 </script>
 
 <svelte:head>
-  <title>Hurl Unmasks Recursive Literature Leaking Out Love</title>
+  <title>{hurllolTitle}</title>
 </svelte:head>
 
 <nav class="site-nav">
   <div class="page-container nav-content">
-    <a class="brand" href="/">Hurl Unmasks Recursive Literature Leaking Out Love</a>
+    <a class="brand" href="/">{hurllolTitle}</a>
     <div class="nav-links">
       {#each navItems as item}
         {@const active = item.isActive(currentPath)}
