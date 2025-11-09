@@ -163,6 +163,9 @@ cd novellone
    | `OPENAI_PREMISE_MODEL` | Model used for premise + theme generation |
    | `OPENAI_EVAL_MODEL` | Model used to score stories |
    | `OPENAI_MAX_TOKENS_*` | Output token budgets per task |
+   | `OPENAI_TEMPERATURE_*` | Creativity controls for chapter/premise/eval prompts |
+   | `GPT5_REASONING_EFFORT` | (GPT-5 only) `minimal`/`low`/`medium`/`high` reasoning depth |
+   | `GPT5_VERBOSITY` | (GPT-5 only) `low`/`medium`/`high` response length |
    | `DATABASE_URL` | Async SQLAlchemy DSN (must include `+asyncpg`) |
    | `WORKER_TICK_INTERVAL` | Seconds between APScheduler ticks |
    | `MIN_CHAPTERS_BEFORE_EVAL` | Chapters before first evaluation |

@@ -3,7 +3,7 @@ import logging
 import random
 import re
 import time
-from typing import Any, Sequence
+from typing import Any, Sequence, TYPE_CHECKING
 
 from openai import AsyncOpenAI, OpenAIError
 
@@ -12,12 +12,38 @@ from models import Chapter, Story
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from config_store import RuntimeConfig
+
 _settings = get_settings()
 _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 
+def _resolve_openai_params(
+    config: "RuntimeConfig | None",
+    *,
+    model_attr: str,
+    temperature_attr: str,
+) -> tuple[str, float, str | None, str | None]:
+    source: Any = config or _settings
+    model = getattr(source, model_attr)
+    temperature = getattr(source, temperature_attr)
+    reasoning_effort: str | None = None
+    verbosity: str | None = None
+    if isinstance(model, str) and model.lower().startswith("gpt-5"):
+        reasoning_effort = getattr(source, "gpt5_reasoning_effort", "minimal")
+        verbosity = getattr(source, "gpt5_verbosity", "medium")
+    return model, temperature, reasoning_effort, verbosity
+
+
 async def _call_openai(
-    model: str, prompt: str, *, max_tokens: int, temperature: float
+    model: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    temperature: float | None = None,
+    reasoning_effort: str | None = None,
+    verbosity: str | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Call OpenAI API using Chat Completions endpoint."""
     try:
@@ -65,8 +91,18 @@ async def _call_openai(
 
         # Only add temperature for non-gpt-5 and non-reasoning models
         # GPT-5 and o1 models don't support temperature parameter
-        if not is_gpt5_model and not is_reasoning_model:
+        if (
+            not is_gpt5_model
+            and not is_reasoning_model
+            and temperature is not None
+        ):
             request_params["temperature"] = temperature
+
+        if is_gpt5_model:
+            if reasoning_effort:
+                request_params["reasoning"] = {"effort": reasoning_effort}
+            if verbosity:
+                request_params["text"] = {"verbosity": verbosity}
 
         response = await _client.chat.completions.create(**request_params)
     except OpenAIError as exc:
@@ -223,7 +259,9 @@ def _safe_json_loads(text: str) -> dict[str, Any] | None:
     return result
 
 
-async def generate_story_premise() -> dict[str, Any]:
+async def generate_story_premise(
+    config: "RuntimeConfig | None" = None,
+) -> dict[str, Any]:
     # Generate random chaos parameters for this story
     absurdity_initial = random.uniform(0.05, 0.25)
     surrealism_initial = random.uniform(0.05, 0.25)
@@ -273,11 +311,19 @@ async def generate_story_premise() -> dict[str, Any]:
     max_retries = 2
     for attempt in range(max_retries):
         try:
+            model, temperature, reasoning_effort, verbosity = _resolve_openai_params(
+                config,
+                model_attr="openai_premise_model",
+                temperature_attr="openai_temperature_premise",
+            )
+
             text, _ = await _call_openai(
-                _settings.openai_premise_model,
+                model,
                 prompt,
                 max_tokens=_settings.openai_max_tokens_premise,
-                temperature=_settings.openai_temperature_premise,
+                temperature=temperature,
+                reasoning_effort=reasoning_effort,
+                verbosity=verbosity,
             )
             logger.debug(
                 "Raw premise response (attempt %d, first 500 chars): %s",
@@ -417,7 +463,9 @@ async def generate_story_premise() -> dict[str, Any]:
     }
 
 
-async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
+async def generate_story_theme(
+    premise: str, title: str, config: "RuntimeConfig | None" = None
+) -> dict[str, Any]:
     prompt = (
         f"Based on {title!r} and the following premise: {premise}\n"
         "generate a visual theme matching the story's tone/setting.\n"
@@ -426,11 +474,19 @@ async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
         "border_radius, shadow_style, animation_speed}.\n"
         "Make colors harmonious and readable. Choose fonts that match aesthetic."
     )
+    model, temperature, reasoning_effort, verbosity = _resolve_openai_params(
+        config,
+        model_attr="openai_premise_model",
+        temperature_attr="openai_temperature_premise",
+    )
+
     text, _ = await _call_openai(
-        _settings.openai_premise_model,
+        model,
         prompt,
         max_tokens=_settings.openai_max_tokens_premise,
-        temperature=_settings.openai_temperature_premise,
+        temperature=temperature,
+        reasoning_effort=reasoning_effort,
+        verbosity=verbosity,
     )
     parsed = _safe_json_loads(text)
     if parsed is not None:
@@ -509,7 +565,9 @@ def _needs_conclusion(text: str) -> bool:
     return trimmed[-1] not in _TERMINATING_PUNCTUATION
 
 
-async def _complete_chapter(story: Story, draft: str) -> str:
+async def _complete_chapter(
+    story: Story, draft: str, config: "RuntimeConfig | None" = None
+) -> str:
     completion_prompt = (
         f"Story: {story.title}\n"
         f"Premise: {story.premise}\n"
@@ -522,11 +580,19 @@ async def _complete_chapter(story: Story, draft: str) -> str:
         "Write only the new concluding text."
     )
     max_tokens = max(256, int(_settings.openai_max_tokens_chapter * 0.35))
+    model, temperature, reasoning_effort, verbosity = _resolve_openai_params(
+        config,
+        model_attr="openai_model",
+        temperature_attr="openai_temperature_chapter",
+    )
+
     addition, _ = await _call_openai(
-        _settings.openai_model,
+        model,
         completion_prompt,
         max_tokens=max_tokens,
-        temperature=_settings.openai_temperature_chapter,
+        temperature=temperature,
+        reasoning_effort=reasoning_effort,
+        verbosity=verbosity,
     )
     separator = "\n\n" if not draft.endswith("\n\n") else "\n"
     return f"{draft.rstrip()}{separator}{addition.strip()}"
@@ -537,6 +603,7 @@ async def generate_chapter(
     recent_chapters: Sequence[Chapter],
     *,
     chapter_number: int,
+    config: "RuntimeConfig | None" = None,
 ) -> dict[str, Any]:
     # Calculate expected chaos parameters for this chapter
     expected_absurdity = story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
@@ -583,11 +650,19 @@ async def generate_chapter(
     )
     
     start = time.perf_counter()
+    model, temperature, reasoning_effort, verbosity = _resolve_openai_params(
+        config,
+        model_attr="openai_model",
+        temperature_attr="openai_temperature_chapter",
+    )
+
     text, usage = await _call_openai(
-        _settings.openai_model,
+        model,
         prompt,
         max_tokens=_settings.openai_max_tokens_chapter,
-        temperature=_settings.openai_temperature_chapter,
+        temperature=temperature,
+        reasoning_effort=reasoning_effort,
+        verbosity=verbosity,
     )
     
     # Try to parse JSON response
@@ -616,7 +691,7 @@ async def generate_chapter(
     chapter_content = _clean_chapter_content(chapter_content)
 
     if _needs_conclusion(chapter_content):
-        chapter_content = await _complete_chapter(story, chapter_content)
+        chapter_content = await _complete_chapter(story, chapter_content, config)
     
     elapsed = int((time.perf_counter() - start) * 1000)
     tokens_used: int | None = None
@@ -720,11 +795,11 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
         return ""
 
 
-async def spawn_new_story() -> dict[str, Any]:
-    premise_data = await generate_story_premise()
+async def spawn_new_story(config: "RuntimeConfig | None" = None) -> dict[str, Any]:
+    premise_data = await generate_story_premise(config)
     title = premise_data.get("title") or "Untitled Expedition"
     premise = premise_data.get("premise") or "A mysterious journey unfolds."
-    theme = await generate_story_theme(premise, title)
+    theme = await generate_story_theme(premise, title, config)
     return {
         "title": title,
         "premise": premise,

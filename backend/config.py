@@ -22,6 +22,12 @@ class AppSettings(BaseSettings):
     openai_temperature_chapter: float = Field(..., alias="OPENAI_TEMPERATURE_CHAPTER")
     openai_temperature_premise: float = Field(..., alias="OPENAI_TEMPERATURE_PREMISE")
     openai_temperature_eval: float = Field(..., alias="OPENAI_TEMPERATURE_EVAL")
+    gpt5_reasoning_effort: Literal["minimal", "low", "medium", "high"] = Field(
+        "minimal", alias="GPT5_REASONING_EFFORT"
+    )
+    gpt5_verbosity: Literal["low", "medium", "high"] = Field(
+        "medium", alias="GPT5_VERBOSITY"
+    )
 
     chapter_interval_seconds: int = Field(..., alias="CHAPTER_INTERVAL_SECONDS")
     evaluation_interval_chapters: int = Field(..., alias="EVALUATION_INTERVAL_CHAPTERS")

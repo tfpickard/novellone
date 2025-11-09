@@ -229,6 +229,12 @@ class ConfigUpdate(BaseModel):
     openai_temperature_chapter: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
     openai_temperature_premise: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
     openai_temperature_eval: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
+    gpt5_reasoning_effort: Annotated[
+        Literal["minimal", "low", "medium", "high"] | None, Field(default=None)
+    ] = None
+    gpt5_verbosity: Annotated[
+        Literal["low", "medium", "high"] | None, Field(default=None)
+    ] = None
 
 
 @app.get("/api/config")
@@ -540,7 +546,7 @@ async def admin_spawn_story(
             logger.info("Terminated oldest story '%s' to make room for new story", oldest_story.title)
     
     # Spawn the new story
-    payload = await spawn_new_story()
+    payload = await spawn_new_story(runtime_config)
     story = Story(
         title=payload["title"],
         premise=payload["premise"],

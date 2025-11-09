@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Sequence
+from typing import Any, Sequence, TYPE_CHECKING
 
 from openai import AsyncOpenAI, OpenAIError
 
@@ -9,11 +9,32 @@ from models import Chapter, Story
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from config_store import RuntimeConfig
+
 _settings = get_settings()
 _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 
-async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str, Any]:
+def _resolve_eval_params(
+    config: "RuntimeConfig | None",
+) -> tuple[str, float, str | None, str | None]:
+    source: Any = config or _settings
+    model = source.openai_eval_model
+    temperature = source.openai_temperature_eval
+    reasoning_effort: str | None = None
+    verbosity: str | None = None
+    if isinstance(model, str) and model.lower().startswith("gpt-5"):
+        reasoning_effort = getattr(source, "gpt5_reasoning_effort", "minimal")
+        verbosity = getattr(source, "gpt5_verbosity", "medium")
+    return model, temperature, reasoning_effort, verbosity
+
+
+async def evaluate_story(
+    story: Story,
+    chapters: Sequence[Chapter],
+    config: "RuntimeConfig | None" = None,
+) -> dict[str, Any]:
     chapter_summaries = "\n\n".join(
         f"Chapter {c.chapter_number}: {c.content[:4000]}"
         for c in chapters[-_settings.context_window_chapters :]
@@ -66,6 +87,8 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
 
     try:
         model_name = _settings.openai_eval_model.lower()
+        model, temperature, reasoning_effort, verbosity = _resolve_eval_params(config)
+        model_name = model.lower()
         is_reasoning_model = any(x in model_name for x in ["o1", "gpt-5", "reasoning"])
         is_gpt5_model = "gpt-5" in model_name
 
@@ -84,7 +107,7 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
 
         # Build request parameters
         request_params = {
-            "model": _settings.openai_eval_model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "You are a story quality evaluator. Respond with JSON only."},
                 {"role": "user", "content": prompt}
@@ -98,8 +121,18 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
             request_params["max_tokens"] = effective_max_tokens
         
         # Only add temperature for non-gpt-5 and non-reasoning models
-        if not is_gpt5_model and not is_reasoning_model:
-            request_params["temperature"] = _settings.openai_temperature_eval
+        if (
+            not is_gpt5_model
+            and not is_reasoning_model
+            and temperature is not None
+        ):
+            request_params["temperature"] = temperature
+
+        if is_gpt5_model:
+            if reasoning_effort:
+                request_params["reasoning"] = {"effort": reasoning_effort}
+            if verbosity:
+                request_params["text"] = {"verbosity": verbosity}
         
         response = await _client.chat.completions.create(**request_params)
     except OpenAIError as exc:

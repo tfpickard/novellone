@@ -145,7 +145,12 @@ class BackgroundWorker:
         )
         recent = list((await session.execute(chapters_stmt)).scalars())
         recent.reverse()
-        chapter_data = await generate_chapter(story, recent, chapter_number=story.chapter_count + 1)
+        chapter_data = await generate_chapter(
+            story,
+            recent,
+            chapter_number=story.chapter_count + 1,
+            config=config,
+        )
         chapter = Chapter(story_id=story.id, **chapter_data)
         session.add(chapter)
         story.chapter_count += 1
@@ -189,7 +194,7 @@ class BackgroundWorker:
         logger.debug(
             "Evaluating story %s with %d chapters", story.id, len(chapters)
         )
-        result = await evaluate_story(story, chapters)
+        result = await evaluate_story(story, chapters, config=config)
         evaluation = StoryEvaluation(
             story_id=story.id,
             chapter_number=story.chapter_count,
@@ -279,7 +284,7 @@ class BackgroundWorker:
             needed = config.min_active_stories - active_count
             logger.debug("Spawning %d stories to reach minimum active target", needed)
             for _ in range(needed):
-                await self._spawn_story(session)
+                await self._spawn_story(session, config)
         elif active_count > config.max_active_stories:
             excess = active_count - config.max_active_stories
             logger.debug("Completing %d stories to enforce maximum active limit", excess)
@@ -293,8 +298,8 @@ class BackgroundWorker:
             for story in victims:
                 await self._complete_story(session, story, "Reduced to maintain limit")
 
-    async def _spawn_story(self, session) -> None:
-        payload = await spawn_new_story()
+    async def _spawn_story(self, session, config: RuntimeConfig) -> None:
+        payload = await spawn_new_story(config)
         story = Story(
             title=payload["title"],
             premise=payload["premise"],

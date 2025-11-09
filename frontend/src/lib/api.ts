@@ -83,6 +83,8 @@ export type RuntimeConfig = {
   openai_temperature_chapter: number;
   openai_temperature_premise: number;
   openai_temperature_eval: number;
+  gpt5_reasoning_effort: string;
+  gpt5_verbosity: string;
 };
 
 export function getStories(params: URLSearchParams): Promise<any> {

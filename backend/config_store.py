@@ -25,6 +25,8 @@ class RuntimeConfig:
     openai_temperature_chapter: float
     openai_temperature_premise: float
     openai_temperature_eval: float
+    gpt5_reasoning_effort: str
+    gpt5_verbosity: str
 
     def as_dict(self) -> dict[str, int | float | str]:
         return {
@@ -41,6 +43,8 @@ class RuntimeConfig:
             "openai_temperature_chapter": self.openai_temperature_chapter,
             "openai_temperature_premise": self.openai_temperature_premise,
             "openai_temperature_eval": self.openai_temperature_eval,
+            "gpt5_reasoning_effort": self.gpt5_reasoning_effort,
+            "gpt5_verbosity": self.gpt5_verbosity,
         }
 
 
@@ -60,6 +64,14 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "openai_temperature_chapter": {"type": float, "min": 0.0, "max": 2.0},
     "openai_temperature_premise": {"type": float, "min": 0.0, "max": 2.0},
     "openai_temperature_eval": {"type": float, "min": 0.0, "max": 2.0},
+    "gpt5_reasoning_effort": {
+        "type": str,
+        "choices": ["minimal", "low", "medium", "high"],
+    },
+    "gpt5_verbosity": {
+        "type": str,
+        "choices": ["low", "medium", "high"],
+    },
 }
 
 _DEFAULTS: dict[str, int | float | str] = {
@@ -100,6 +112,11 @@ def _coerce_value(key: str, value: Any) -> int | float | str:
             raise ValueError(f"{key} must be at least {min_length} characters")
         if max_length is not None and len(coerced) > max_length:
             raise ValueError(f"{key} must be at most {max_length} characters")
+        choices = meta.get("choices")
+        if choices is not None and coerced not in choices:
+            raise ValueError(
+                f"{key} must be one of {', '.join(choices)}"
+            )
         return coerced
     else:
         raise ValueError(f"Unsupported type for {key}")

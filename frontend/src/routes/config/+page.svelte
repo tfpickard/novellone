@@ -19,7 +19,12 @@
     | 'openai_temperature_premise'
     | 'openai_temperature_eval';
 
-  type StringConfigKey = 'openai_model' | 'openai_premise_model' | 'openai_eval_model';
+  type StringConfigKey =
+    | 'openai_model'
+    | 'openai_premise_model'
+    | 'openai_eval_model'
+    | 'gpt5_reasoning_effort'
+    | 'gpt5_verbosity';
 
   type ConfigKey = NumericConfigKey | StringConfigKey;
 
@@ -48,6 +53,8 @@
     hint?: string;
     kind: 'string';
     placeholder?: string;
+    options?: readonly string[];
+    requiresGpt5?: boolean;
   };
 
   type ConfigItem = NumericConfigItem | TextConfigItem;
@@ -65,7 +72,9 @@
     openai_eval_model: 'gpt-4o-mini',
     openai_temperature_chapter: 1.0,
     openai_temperature_premise: 1.0,
-    openai_temperature_eval: 0.3
+    openai_temperature_eval: 0.3,
+    gpt5_reasoning_effort: 'minimal',
+    gpt5_verbosity: 'medium'
   };
 
   let config: ConfigValues = { ...initialConfig };
@@ -196,6 +205,24 @@
       min: 0,
       max: 2,
       step: 0.05
+    },
+    {
+      key: 'gpt5_reasoning_effort',
+      label: 'GPT-5 Reasoning Effort',
+      description: 'Controls how many reasoning tokens GPT-5 spends before answering.',
+      hint: 'Minimal prioritises speed; high yields the most thorough internal reasoning.',
+      kind: 'string',
+      options: ['minimal', 'low', 'medium', 'high'],
+      requiresGpt5: true
+    },
+    {
+      key: 'gpt5_verbosity',
+      label: 'GPT-5 Verbosity',
+      description: 'Adjusts response length when using GPT-5 models.',
+      hint: 'Use low for concise answers, high for detailed explanations.',
+      kind: 'string',
+      options: ['low', 'medium', 'high'],
+      requiresGpt5: true
     }
   ];
 
@@ -237,6 +264,8 @@
   let resetError: string | null = null;
   let loggingOut = false;
   let logoutError: string | null = null;
+  $: isGpt5Model =
+    (config.openai_model?.toLowerCase().startsWith('gpt-5') ?? false);
 
   const equals = (item: ConfigItem, nextValue: number | string): boolean => {
     const currentValue = config[item.key] as number | string;
@@ -266,6 +295,9 @@
     }
 
     if (item.kind === 'string') {
+      if (item.options && !item.options.includes(raw.trim())) {
+        return 'Select a valid option.';
+      }
       return null;
     }
 
@@ -481,30 +513,51 @@
         <form class="config-form" on:submit|preventDefault={() => save(item)}>
           <label class="sr-only" for={`config-${item.key}`}>{item.label}</label>
           <div class="input-row">
-            <input
-              id={`config-${item.key}`}
-              class:invalid={Boolean(errors[item.key])}
-              class:dirty={dirtyFlags[item.key]}
-              type={item.kind === 'string' ? 'text' : 'number'}
-              step={item.kind === 'number' ? item.step : undefined}
-              min={item.kind === 'number' ? item.min : undefined}
-              max={item.kind === 'number' ? item.max ?? undefined : undefined}
-              placeholder={item.kind === 'string' ? item.placeholder ?? '' : undefined}
-              autocapitalize="off"
-              spellcheck={item.kind === 'string' ? false : undefined}
-              value={inputs[item.key]}
-              inputmode={
-                item.kind === 'number'
-                  ? item.type === 'int'
-                    ? 'numeric'
-                    : 'decimal'
-                  : 'text'
-              }
-              on:input={(event) => handleInput(item, event.currentTarget.value)}
-            />
+            {#if item.kind === 'string' && item.options}
+              <select
+                id={`config-${item.key}`}
+                class:invalid={Boolean(errors[item.key])}
+                class:dirty={dirtyFlags[item.key]}
+                disabled={item.requiresGpt5 && !isGpt5Model}
+                value={inputs[item.key]}
+                on:change={(event) => handleInput(item, event.currentTarget.value)}
+              >
+                {#each item.options as option}
+                  <option value={option}>{option}</option>
+                {/each}
+              </select>
+            {:else}
+              <input
+                id={`config-${item.key}`}
+                class:invalid={Boolean(errors[item.key])}
+                class:dirty={dirtyFlags[item.key]}
+                type={item.kind === 'string' ? 'text' : 'number'}
+                step={item.kind === 'number' ? item.step : undefined}
+                min={item.kind === 'number' ? item.min : undefined}
+                max={item.kind === 'number' ? item.max ?? undefined : undefined}
+                placeholder={item.kind === 'string' ? item.placeholder ?? '' : undefined}
+                autocapitalize="off"
+                spellcheck={item.kind === 'string' ? false : undefined}
+                value={inputs[item.key]}
+                inputmode={
+                  item.kind === 'number'
+                    ? item.type === 'int'
+                      ? 'numeric'
+                      : 'decimal'
+                    : 'text'
+                }
+                disabled={item.requiresGpt5 && !isGpt5Model}
+                on:input={(event) => handleInput(item, event.currentTarget.value)}
+              />
+            {/if}
             <button
               type="submit"
-              disabled={savingKey === item.key || !dirtyFlags[item.key] || Boolean(errors[item.key])}
+              disabled={
+                savingKey === item.key ||
+                !dirtyFlags[item.key] ||
+                Boolean(errors[item.key]) ||
+                (item.requiresGpt5 && !isGpt5Model)
+              }
             >
               {savingKey === item.key ? 'Saving…' : dirtyFlags[item.key] ? 'Save' : 'Saved'}
             </button>
@@ -513,6 +566,9 @@
         <p>{item.description}</p>
         {#if item.hint}
           <footer>{item.hint}</footer>
+        {/if}
+        {#if item.requiresGpt5 && !isGpt5Model}
+          <footer>Enable by selecting a GPT-5 chapter model.</footer>
         {/if}
         {#if errors[item.key]}
           <p class="error-message">{errors[item.key]}</p>
@@ -720,6 +776,23 @@
     padding: 0.65rem 0.85rem;
     font-size: 1.05rem;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .input-row select {
+    flex: 1;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.85);
+    color: #f8fafc;
+    padding: 0.65rem 0.85rem;
+    font-size: 1.05rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .input-row select:focus {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
   }
 
   .input-row input:focus {
