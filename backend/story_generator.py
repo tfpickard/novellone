@@ -318,18 +318,22 @@ async def _request_prompt_variation_from_model(
     stats: dict[str, Any], variation_strength: float
 ) -> dict[str, Any]:
     stats_json = json.dumps(stats, indent=2, sort_keys=True)
-    prompt = (
-        "We run an autonomous sci-fi story generator. The base prompt already demands unique titles, surreal energy, an engineer named Tom, and JSON output.\n"
-        "We care about variation more than maximising average quality scores. Use the recent story metrics below to propose new creative pushes.\n"
-        f"Variation strength: {variation_strength:.2f} (0 = gentle, 1 = extremely bold).\n\n"
-        "Recent story snapshot (most recent first):\n"
-        f"{stats_json}\n\n"
-        "Provide 2-4 concise imperative directives that we can append to the base prompt to shake things up."
-        " The directives must not remove existing requirements (e.g., keep Tom the engineer, keep JSON structure) but should introduce fresh experiments."
-        " Encourage swings into underexplored tones, structures, settings, or narrative devices."
-        " Then explain your reasoning in <=80 words.\n\n"
-        "Return only valid JSON: {\"directives\": ["directive1", ...], \"rationale\": "brief explanation"}."
-    )
+    prompt_lines = [
+        "We run an autonomous sci-fi story generator. The base prompt already demands unique titles, surreal energy, an engineer named Tom, and JSON output.",
+        "We care about variation more than maximising average quality scores. Use the recent story metrics below to propose new creative pushes.",
+        f"Variation strength: {variation_strength:.2f} (0 = gentle, 1 = extremely bold).",
+        "",
+        "Recent story snapshot (most recent first):",
+        stats_json,
+        "",
+        "Provide 2-4 concise imperative directives that we can append to the base prompt to shake things up.",
+        "The directives must not remove existing requirements (e.g., keep Tom the engineer, keep JSON structure) but should introduce fresh experiments.",
+        "Encourage swings into underexplored tones, structures, settings, or narrative devices.",
+        "Then explain your reasoning in <=80 words.",
+        "",
+        "Return only valid JSON: {\"directives\": [\"directive1\", ...], \"rationale\": \"brief explanation\"}.",
+    ]
+    prompt = "\n".join(prompt_lines)
 
     temperature = 0.35 + (variation_strength * 0.45)
     raw = await _call_prompt_engineer(prompt, temperature=temperature)
