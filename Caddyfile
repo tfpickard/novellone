@@ -1,0 +1,81 @@
+# Caddy configuration for Eternal Stories at hurl.lol
+# Place this file in /etc/caddy/Caddyfile
+
+# Caddy automatically:
+# - Obtains and renews SSL certificates from Let's Encrypt
+# - Redirects HTTP to HTTPS
+# - Enables HTTP/2 and HTTP/3
+# - Adds security headers
+
+hurl.lol, www.hurl.lol {
+    # Email for Let's Encrypt notifications
+    # Set this via environment variable or command line:
+    # caddy run --email your@email.com
+    
+    # Security headers
+    header {
+        # HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Remove server header
+        -Server
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # WebSocket endpoint - must be first to match before /api/
+    handle /ws/* {
+        reverse_proxy localhost:8000 {
+            # WebSocket configuration
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # API endpoints
+    handle /api/* {
+        reverse_proxy localhost:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Auth endpoints
+    handle /auth/* {
+        reverse_proxy localhost:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Frontend application (everything else)
+    handle {
+        reverse_proxy localhost:4000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Health check endpoint (for monitoring)
+    handle /health {
+        respond "OK" 200
+    }
+}
+

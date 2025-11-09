@@ -32,15 +32,22 @@ apt-get install -y \
     git \
     docker.io \
     docker-compose \
-    nginx \
-    certbot \
-    python3-certbot-nginx \
+    debian-keyring \
+    debian-archive-keyring \
+    apt-transport-https \
     curl \
     ufw
 
-# Start and enable Docker
+# Install Caddy
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
+apt-get install -y caddy
+
+# Start and enable services
 systemctl start docker
 systemctl enable docker
+systemctl enable caddy
 
 echo ""
 echo -e "${GREEN}Step 2: Creating application user...${NC}"
@@ -95,28 +102,30 @@ cd "$APP_DIR"
 sudo -u "$APP_USER" docker compose -f docker-compose.prod.yml build
 
 echo ""
-echo -e "${GREEN}Step 7: Setting up nginx...${NC}"
-if [ ! -f "/etc/nginx/sites-available/novellone" ]; then
-    cp "$APP_DIR/nginx/novellone.conf" /etc/nginx/sites-available/novellone
+echo -e "${GREEN}Step 7: Setting up Caddy...${NC}"
+if [ ! -f "/etc/caddy/Caddyfile" ]; then
+    # Backup original Caddyfile if it exists
+    [ -f "/etc/caddy/Caddyfile" ] && mv /etc/caddy/Caddyfile /etc/caddy/Caddyfile.backup
     
-    # Remove SSL lines temporarily (before we have certificates)
-    sed -i 's/ssl_certificate/#ssl_certificate/g' /etc/nginx/sites-available/novellone
-    sed -i 's/ssl_trusted/#ssl_trusted/g' /etc/nginx/sites-available/novellone
-    sed -i 's/ssl_stapling/#ssl_stapling/g' /etc/nginx/sites-available/novellone
-    sed -i 's/listen 443/#listen 443/g' /etc/nginx/sites-available/novellone
+    # Install our Caddyfile
+    cp "$APP_DIR/Caddyfile" /etc/caddy/Caddyfile
     
-    ln -sf /etc/nginx/sites-available/novellone /etc/nginx/sites-enabled/
-    
-    # Remove default site if exists
-    rm -f /etc/nginx/sites-enabled/default
-    
-    echo "Nginx configuration installed"
+    echo "Caddyfile installed"
 else
-    echo "Nginx configuration already exists"
+    echo "Caddyfile already exists, updating..."
+    cp "$APP_DIR/Caddyfile" /etc/caddy/Caddyfile
 fi
 
-# Test nginx config
-nginx -t
+# Set permissions
+chown root:root /etc/caddy/Caddyfile
+chmod 644 /etc/caddy/Caddyfile
+
+# Create log directory
+mkdir -p /var/log/caddy
+chown caddy:caddy /var/log/caddy
+
+# Test Caddy config
+caddy validate --config /etc/caddy/Caddyfile
 
 echo ""
 echo -e "${GREEN}Step 8: Setting up firewall...${NC}"
@@ -127,17 +136,16 @@ ufw allow 443/tcp   # HTTPS
 ufw status
 
 echo ""
-echo -e "${GREEN}Step 9: Obtaining SSL certificate...${NC}"
-# Restart nginx to serve HTTP for ACME challenge
-systemctl restart nginx
+echo -e "${GREEN}Step 9: Starting Caddy (SSL auto-configured)...${NC}"
+# Caddy automatically obtains SSL certificates on first start
+systemctl restart caddy
 
-# Get certificate
-certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos --redirect \
-    || echo -e "${YELLOW}Certificate generation failed. You may need to run: sudo certbot --nginx -d $DOMAIN${NC}"
+# Wait a moment for Caddy to obtain certificates
+echo "Waiting for Caddy to obtain SSL certificates..."
+sleep 5
 
-# Restore full nginx config with SSL
-cp "$APP_DIR/nginx/novellone.conf" /etc/nginx/sites-available/novellone
-nginx -t && systemctl reload nginx
+# Check Caddy status
+systemctl status caddy --no-pager || echo -e "${YELLOW}Check Caddy logs: journalctl -u caddy -f${NC}"
 
 echo ""
 echo -e "${GREEN}Step 10: Setting up systemd service...${NC}"
@@ -161,12 +169,19 @@ echo ""
 echo "Useful commands:"
 echo "  View logs:          sudo journalctl -u novellone -f"
 echo "  Restart service:    sudo systemctl restart novellone"
+echo "  Restart Caddy:      sudo systemctl restart caddy"
+echo "  View Caddy logs:    sudo journalctl -u caddy -f"
 echo "  View container logs: cd $APP_DIR && sudo -u $APP_USER docker compose -f docker-compose.prod.yml logs -f"
 echo "  Update deployment:  cd $APP_DIR && sudo ./scripts/update.sh"
 echo ""
 echo -e "${YELLOW}Don't forget to:${NC}"
 echo "  1. Review and secure $APP_DIR/.env.production"
-echo "  2. Set up automated certificate renewal (certbot does this automatically)"
-echo "  3. Configure backups for PostgreSQL database"
+echo "  2. Configure backups for PostgreSQL database (see scripts/backup.sh)"
+echo "  3. Monitor Caddy logs for any SSL issues"
+echo ""
+echo -e "${GREEN}Caddy will automatically:${NC}"
+echo "  - Obtain SSL certificates from Let's Encrypt"
+echo "  - Renew certificates before expiration"
+echo "  - Redirect HTTP to HTTPS"
 echo ""
 

@@ -1,14 +1,14 @@
 # VPS Deployment Guide - hurl.lol
 
-Complete guide for deploying Eternal Stories on a VPS with nginx reverse proxy and SSL.
+Complete guide for deploying Eternal Stories on a VPS with Caddy reverse proxy and automatic HTTPS.
 
 ## Overview
 
 This deployment uses:
 - **VPS**: Your own Ubuntu/Debian server
 - **Docker Compose**: Container orchestration (production config)
-- **Nginx**: Reverse proxy and SSL termination
-- **Let's Encrypt**: Free SSL certificates via certbot
+- **Caddy**: Reverse proxy with automatic HTTPS
+- **Let's Encrypt**: Free SSL certificates (automatic via Caddy)
 - **Systemd**: Service management for auto-start
 - **Domain**: https://hurl.lol
 
@@ -103,15 +103,22 @@ apt-get install -y \
     git \
     docker.io \
     docker-compose \
-    nginx \
-    certbot \
-    python3-certbot-nginx \
+    debian-keyring \
+    debian-archive-keyring \
+    apt-transport-https \
     curl \
     ufw
 
-# Start Docker
+# Install Caddy
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
+apt-get install -y caddy
+
+# Start services
 systemctl start docker
 systemctl enable docker
+systemctl enable caddy
 ```
 
 ### Step 2: Create Application User
@@ -171,20 +178,25 @@ cd /opt/novellone
 sudo -u novellone docker compose -f docker-compose.prod.yml build
 ```
 
-### Step 6: Configure Nginx
+### Step 6: Configure Caddy
 
 ```bash
-# Install nginx config
-cp /opt/novellone/nginx/novellone.conf /etc/nginx/sites-available/novellone
+# Backup original Caddyfile if needed
+[ -f /etc/caddy/Caddyfile ] && mv /etc/caddy/Caddyfile /etc/caddy/Caddyfile.backup
 
-# Create symlink
-ln -s /etc/nginx/sites-available/novellone /etc/nginx/sites-enabled/
+# Install Caddyfile
+cp /opt/novellone/Caddyfile /etc/caddy/Caddyfile
 
-# Remove default site
-rm /etc/nginx/sites-enabled/default
+# Set permissions
+chown root:root /etc/caddy/Caddyfile
+chmod 644 /etc/caddy/Caddyfile
+
+# Create log directory
+mkdir -p /var/log/caddy
+chown caddy:caddy /var/log/caddy
 
 # Test configuration
-nginx -t
+caddy validate --config /etc/caddy/Caddyfile
 ```
 
 ### Step 7: Configure Firewall
@@ -204,21 +216,23 @@ ufw allow 443/tcp
 ufw status
 ```
 
-### Step 8: Get SSL Certificate
+### Step 8: Start Caddy (SSL Automatic)
 
 ```bash
-# Start nginx (temporarily for ACME challenge)
-systemctl restart nginx
+# Start Caddy - it will automatically obtain SSL certificates
+systemctl start caddy
 
-# Get certificate
-certbot --nginx -d hurl.lol -d www.hurl.lol
+# Wait a moment for certificate provisioning
+sleep 5
 
-# Follow prompts:
-# - Enter email address
-# - Agree to terms
-# - Choose to redirect HTTP to HTTPS (recommended)
+# Check status
+systemctl status caddy
 
-# Certificate will be automatically installed and nginx reloaded
+# Caddy automatically:
+# - Obtains SSL certificate from Let's Encrypt
+# - Configures HTTPS
+# - Redirects HTTP to HTTPS
+# - Renews certificates before expiration
 ```
 
 ### Step 9: Set Up Systemd Service
@@ -283,16 +297,18 @@ crontab -e
 0 2 * * * /opt/novellone/scripts/backup.sh >> /var/log/novellone-backup.log 2>&1
 ```
 
-### 3. SSL Certificate Auto-Renewal
+### 3. SSL Certificate Management
 
-Certbot automatically sets up a renewal timer. Verify it:
+Caddy handles SSL certificates automatically:
 
 ```bash
-# Check certbot timer
-systemctl status certbot.timer
+# View certificate info
+caddy list-modules | grep tls
 
-# Test renewal (dry run)
-certbot renew --dry-run
+# Check Caddy logs for certificate status
+journalctl -u caddy -f
+
+# Caddy automatically renews certificates - no manual intervention needed!
 ```
 
 ### 4. Log Rotation
@@ -332,6 +348,9 @@ systemctl start novellone
 
 # View service logs
 journalctl -u novellone -f
+
+# View Caddy logs
+journalctl -u caddy -f
 
 # View container logs
 cd /opt/novellone
@@ -441,23 +460,28 @@ sudo -u novellone docker compose -f docker-compose.prod.yml logs
 # Check DNS is pointing to your server
 dig hurl.lol +short
 
-# Try manual certificate
-certbot --nginx -d hurl.lol --manual
+# Check Caddy logs for errors
+journalctl -u caddy -n 50
 
-# Check nginx config
-nginx -t
+# Validate Caddyfile
+caddy validate --config /etc/caddy/Caddyfile
+
+# Common issues:
+# - DNS not pointing to server yet
+# - Firewall blocking ports 80/443
+# - Domain already has rate-limited certificates from Let's Encrypt
 ```
 
-**Certificate renewal failing:**
+**Force certificate renewal:**
 ```bash
-# Check renewal
-certbot renew --dry-run
+# Restart Caddy to retry certificate
+systemctl restart caddy
 
-# Force renewal
-certbot renew --force-renewal
+# Check logs
+journalctl -u caddy -f
 ```
 
-### Nginx 502 Bad Gateway
+### Caddy 502 Bad Gateway
 
 **Causes:**
 - Backend containers not running
@@ -469,12 +493,15 @@ certbot renew --force-renewal
 # Check containers
 docker ps
 
-# Check nginx error logs
-tail -f /var/log/nginx/novellone_error.log
+# Check Caddy logs
+journalctl -u caddy -n 50
+
+# Check if services are listening on correct ports
+ss -tlnp | grep -E '(4000|8000)'
 
 # Restart services
 systemctl restart novellone
-systemctl restart nginx
+systemctl restart caddy
 ```
 
 ### Database Connection Errors
@@ -501,22 +528,26 @@ docker compose -f docker-compose.prod.yml exec backend python -c \
 
 **Check browser console** for WebSocket errors.
 
-**Verify nginx WebSocket config:**
+**Verify Caddy config:**
 ```bash
-# /etc/nginx/sites-available/novellone should have:
-# - Upgrade $http_upgrade
-# - Connection "upgrade"
-# - Long timeouts for /ws/ location
+# Check Caddyfile has /ws/* handler
+cat /etc/caddy/Caddyfile | grep -A 5 "handle /ws"
 
-nginx -t
-systemctl reload nginx
+# Validate config
+caddy validate --config /etc/caddy/Caddyfile
+
+# Restart Caddy
+systemctl restart caddy
 ```
 
 **Test WebSocket endpoint:**
 ```bash
+# Test if backend WebSocket is working
 curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
     https://hurl.lol/ws/stories
 ```
+
+Caddy automatically handles WebSocket connections - no special configuration needed!
 
 ### Out of Disk Space
 
@@ -580,8 +611,11 @@ dpkg-reconfigure -plow unattended-upgrades
 ### 4. Monitor Access Logs
 
 ```bash
-# Nginx access logs
-tail -f /var/log/nginx/novellone_access.log
+# Caddy access logs (JSON format)
+tail -f /var/log/caddy/access.log
+
+# Or view via journalctl
+journalctl -u caddy -f
 
 # Failed SSH attempts
 grep "Failed password" /var/log/auth.log
@@ -607,11 +641,20 @@ export DOCKER_BUILDKIT=1
 # Add to /etc/environment for persistence
 ```
 
-### 2. Configure Nginx Caching
+### 2. Caddy Performance Tuning
 
-Add to nginx config:
-```nginx
-proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=my_cache:10m max_size=1g inactive=60m;
+Caddy is already optimized out of the box with:
+- HTTP/2 and HTTP/3 (QUIC) enabled by default
+- Automatic compression (gzip, zstd)
+- TLS 1.3 support
+- Efficient connection pooling
+
+To enable caching for static assets, add to Caddyfile:
+```
+@static {
+    path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2
+}
+header @static Cache-Control "public, max-age=31536000, immutable"
 ```
 
 ### 3. Adjust Story Generation Parameters
@@ -671,8 +714,8 @@ journalctl -u novellone --since today | grep -i error | wc -l
 
 1. **Database backup** (automated via cron)
 2. **Environment file**: `/opt/novellone/.env.production`
-3. **Nginx config**: `/etc/nginx/sites-available/novellone`
-4. **SSL certificates**: `/etc/letsencrypt/`
+3. **Caddyfile**: `/etc/caddy/Caddyfile`
+4. **SSL certificates**: `/var/lib/caddy/.local/share/caddy/certificates/` (auto-managed by Caddy)
 
 ### Disaster Recovery
 
