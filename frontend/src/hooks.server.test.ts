@@ -75,6 +75,62 @@ describe('handle hook', () => {
 		});
 	});
 
+	it('validates redirect parameter and rejects external URLs', async () => {
+		const cookies: CookieStore = new Map();
+		const token = createSessionToken('admin', ['admin'], 3600);
+		cookies.set(SESSION_COOKIE_NAME, token);
+
+		const event = createEvent('/login?redirect=https://evil.com', cookies);
+		const resolve = vi.fn();
+
+		await expect(handle({ event, resolve })).rejects.toMatchObject({
+			status: 302,
+			location: '/config' // Should fall back to safe default
+		});
+	});
+
+	it('validates redirect parameter and rejects protocol-relative URLs', async () => {
+		const cookies: CookieStore = new Map();
+		const token = createSessionToken('admin', ['admin'], 3600);
+		cookies.set(SESSION_COOKIE_NAME, token);
+
+		const event = createEvent('/login?redirect=//evil.com/path', cookies);
+		const resolve = vi.fn();
+
+		await expect(handle({ event, resolve })).rejects.toMatchObject({
+			status: 302,
+			location: '/config' // Should fall back to safe default
+		});
+	});
+
+	it('allows valid relative redirect paths', async () => {
+		const cookies: CookieStore = new Map();
+		const token = createSessionToken('admin', ['admin'], 3600);
+		cookies.set(SESSION_COOKIE_NAME, token);
+
+		const event = createEvent('/login?redirect=%2Fconfig%2Fsettings', cookies);
+		const resolve = vi.fn();
+
+		await expect(handle({ event, resolve })).rejects.toMatchObject({
+			status: 302,
+			location: '/config/settings' // Should accept valid relative path
+		});
+	});
+
+	it('rejects redirect with backslashes', async () => {
+		const cookies: CookieStore = new Map();
+		const token = createSessionToken('admin', ['admin'], 3600);
+		cookies.set(SESSION_COOKIE_NAME, token);
+
+		const event = createEvent('/login?redirect=%2F%5Cevil.com', cookies);
+		const resolve = vi.fn();
+
+		await expect(handle({ event, resolve })).rejects.toMatchObject({
+			status: 302,
+			location: '/config' // Should fall back to safe default
+		});
+	});
+
 	it('drops invalid session cookies', async () => {
 		const cookies: CookieStore = new Map();
 		cookies.set(SESSION_COOKIE_NAME, 'invalid.token');

@@ -15,6 +15,37 @@ function buildRedirectTarget(url: URL): string {
 	return `/login?${REDIRECT_PARAM}=${encodeURIComponent(target)}`;
 }
 
+function isValidRedirect(redirect: string): boolean {
+	// Only allow relative paths that start with /
+	// Reject protocol-relative URLs (//evil.com), absolute URLs, and anything with special schemes
+	if (!redirect.startsWith('/')) {
+		return false;
+	}
+	
+	// Reject protocol-relative URLs
+	if (redirect.startsWith('//')) {
+		return false;
+	}
+	
+	// Reject URLs with backslashes (could be used to bypass checks)
+	if (redirect.includes('\\')) {
+		return false;
+	}
+	
+	try {
+		// Try parsing as URL - if it has a protocol/host, it's not a relative path
+		const url = new URL(redirect, 'http://dummy.local');
+		// If the host changed from our dummy, it means it had an absolute URL
+		if (url.host !== 'dummy.local') {
+			return false;
+		}
+	} catch {
+		// If URL parsing fails, that's fine - it's likely a simple relative path
+	}
+	
+	return true;
+}
+
 function sanitizeUser(session: SessionUser | null): SessionUser | null {
 	if (!session) {
 		return null;
@@ -52,7 +83,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (event.url.pathname === '/login' && event.locals.user) {
 		const redirectParam = event.url.searchParams.get(REDIRECT_PARAM) ?? '/config';
-		throw redirect(302, redirectParam);
+		const safeRedirect = isValidRedirect(redirectParam) ? redirectParam : '/config';
+		throw redirect(302, safeRedirect);
 	}
 
 	return resolve(event);
