@@ -23,6 +23,16 @@ class AppSettings(BaseSettings):
     openai_temperature_premise: float = Field(..., alias="OPENAI_TEMPERATURE_PREMISE")
     openai_temperature_eval: float = Field(..., alias="OPENAI_TEMPERATURE_EVAL")
 
+    premise_prompt_refresh_interval: int = Field(
+        ..., alias="PREMISE_PROMPT_REFRESH_INTERVAL"
+    )
+    premise_prompt_stats_window: int = Field(
+        ..., alias="PREMISE_PROMPT_STATS_WINDOW"
+    )
+    premise_prompt_variation_strength: float = Field(
+        ..., alias="PREMISE_PROMPT_VARIATION_STRENGTH"
+    )
+
     chapter_interval_seconds: int = Field(..., alias="CHAPTER_INTERVAL_SECONDS")
     evaluation_interval_chapters: int = Field(..., alias="EVALUATION_INTERVAL_CHAPTERS")
     worker_tick_interval: int = Field(..., alias="WORKER_TICK_INTERVAL")

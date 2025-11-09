@@ -1,5 +1,6 @@
 import json
 import logging
+from statistics import pstdev
 from typing import Any, Sequence
 
 from openai import AsyncOpenAI, OpenAIError
@@ -155,14 +156,56 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter], quality_thre
     payload.setdefault("issues", [])
 
     weights = _settings.evaluation_weights
-    # Scores are on 0-10 scale, so we normalize to 0-1 by dividing by 10
-    overall_score = (
-        payload.get("coherence_score", 0.0) * weights.coherence
-        + payload.get("novelty_score", 0.0) * weights.novelty
-        + payload.get("engagement_score", 0.0) * weights.engagement
-        + payload.get("pacing_score", 0.0) * weights.pacing
-    ) / 10.0
-    payload["overall_score"] = overall_score
+
+    # Normalise individual dimensions to 0-1 range and guard against out-of-band
+    # responses coming back from the model.
+    dimensions = {
+        "coherence": max(0.0, min(10.0, float(payload.get("coherence_score", 0.0)))) / 10.0,
+        "novelty": max(0.0, min(10.0, float(payload.get("novelty_score", 0.0)))) / 10.0,
+        "engagement": max(0.0, min(10.0, float(payload.get("engagement_score", 0.0)))) / 10.0,
+        "pacing": max(0.0, min(10.0, float(payload.get("pacing_score", 0.0)))) / 10.0,
+    }
+
+    weighted_average = (
+        dimensions["coherence"] * weights.coherence
+        + dimensions["novelty"] * weights.novelty
+        + dimensions["engagement"] * weights.engagement
+        + dimensions["pacing"] * weights.pacing
+    )
+
+    dimension_values = tuple(dimensions.values())
+    lowest_dimension = min(dimension_values)
+    spread = pstdev(dimension_values) if len(dimension_values) > 1 else 0.0
+
+    # Penalise lagging categories more aggressively once they dip beneath the
+    # healthy band (roughly 8.5/10). This catches slumps before the average
+    # masks them.
+    weak_penalty = 0.0
+    if lowest_dimension < 0.85:
+        deficit = 0.85 - lowest_dimension
+        weak_penalty = (deficit ** 1.2) * 1.2
+
+    # Encourage balanced performance. High variance indicates one or more
+    # dimensions are drifting far from the others.
+    consistency_penalty = spread * 0.2
+
+    # Each surfaced issue should count against the overall score so that
+    # repeated soft warnings eventually trip the threshold.
+    issue_penalty = min(len(payload.get("issues", [])) * 0.03, 0.15)
+
+    # Reward exceptionally strong stories where every dimension is thriving,
+    # keeping the upper range reachable.
+    excellence_bonus = max(0.0, lowest_dimension - 0.92) * 0.1
+
+    overall_score = weighted_average - weak_penalty - consistency_penalty - issue_penalty + excellence_bonus
+    payload["overall_score_components"] = {
+        "weighted_average": weighted_average,
+        "weak_penalty": weak_penalty,
+        "consistency_penalty": consistency_penalty,
+        "issue_penalty": issue_penalty,
+        "excellence_bonus": excellence_bonus,
+    }
+    payload["overall_score"] = max(0.0, min(1.0, overall_score))
     return payload
 
 

@@ -83,6 +83,36 @@ export type RuntimeConfig = {
   openai_temperature_chapter: number;
   openai_temperature_premise: number;
   openai_temperature_eval: number;
+  premise_prompt_refresh_interval: number;
+  premise_prompt_stats_window: number;
+  premise_prompt_variation_strength: number;
+};
+
+export type PremisePromptState = {
+  directives: string[];
+  rationale: string | null;
+  generated_at: string | null;
+  variation_strength: number | null;
+  manual_override: boolean;
+  stats_snapshot?: Record<string, unknown> | null;
+  hurllol_title: string | null;
+  hurllol_title_components?: string[] | null;
+  hurllol_title_generated_at: string | null;
+};
+
+export type PromptStateResponse = {
+  premise: PremisePromptState;
+};
+
+export type PromptUpdatePayload = {
+  directives?: string[];
+  rationale?: string | null;
+};
+
+export type HurllolBanner = {
+  title: string | null;
+  components: string[];
+  generated_at: string | null;
 };
 
 export function getStories(params: URLSearchParams): Promise<any> {
@@ -132,6 +162,21 @@ export function updateConfig(payload: Partial<RuntimeConfig>): Promise<RuntimeCo
     method: 'PATCH',
     body: JSON.stringify(payload)
   });
+}
+
+export function getPromptState(): Promise<PromptStateResponse> {
+  return request('/api/prompts');
+}
+
+export function updatePromptState(payload: PromptUpdatePayload): Promise<PromptStateResponse> {
+  return request('/api/prompts', {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getHurllol(): Promise<HurllolBanner> {
+  return request('/api/hurllol');
 }
 
 export function generateChapter(id: string): Promise<any> {

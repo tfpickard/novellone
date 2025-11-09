@@ -3,17 +3,498 @@ import logging
 import random
 import re
 import time
+from collections import Counter
+from datetime import datetime
+from statistics import mean
 from typing import Any, Sequence
 
 from openai import AsyncOpenAI, OpenAIError
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from config import get_settings
-from models import Chapter, Story
+from config_store import get_runtime_config
+from database import get_session
+from models import Chapter, Story, SystemConfig
 
 logger = logging.getLogger(__name__)
 
 _settings = get_settings()
 _client = AsyncOpenAI(api_key=_settings.openai_api_key)
+
+_PROMPT_STATE_KEY = "premise_prompt_state"
+_MAX_DYNAMIC_DIRECTIVES = 4
+
+_HURLLOL_LEXICON: dict[str, tuple[str, ...]] = {
+    "H": (
+        "Hyperdimensional",
+        "Holographic",
+        "Haunted",
+        "Heliospheric",
+        "Hypersigil",
+    ),
+    "U": (
+        "Uplink",
+        "Unstable",
+        "Ultraviolet",
+        "Uncanny",
+        "Utopian",
+    ),
+    "R": (
+        "Resonance",
+        "Rift",
+        "Recombinator",
+        "Runic",
+        "Relay",
+    ),
+    "L": (
+        "Laboratory",
+        "Lattice",
+        "Liminal",
+        "Loom",
+        "Launch",
+    ),
+    "O": (
+        "Oracle",
+        "Outpost",
+        "Orbit",
+        "Operator",
+        "Overmind",
+    ),
+}
+
+
+def _generate_hurllol_title() -> tuple[str, list[str]]:
+    words: list[str] = []
+    for letter in "HURLLOL":
+        options = _HURLLOL_LEXICON.get(letter, (letter,))
+        choice = random.choice(options)
+        words.append(choice)
+    title = " ".join(words)
+    return title, words
+
+
+def _safe_mean(values: Sequence[float]) -> float:
+    return float(mean(values)) if values else 0.0
+
+
+def _clean_directives(directives: Sequence[str]) -> list[str]:
+    cleaned = [d.strip() for d in directives if isinstance(d, str) and d.strip()]
+    return cleaned[:_MAX_DYNAMIC_DIRECTIVES]
+
+
+def _render_premise_prompt(
+    style_instruction: str, directives: Sequence[str]
+) -> str:
+    cleaned_directives = _clean_directives(directives)
+    directives_block = ""
+    if cleaned_directives:
+        directive_lines = "\n".join(f"- {line}" for line in cleaned_directives)
+        directives_block = (
+            "\nDynamic variation objectives (embrace novelty over safety, even if scores dip a little):\n"
+            f"{directive_lines}\n"
+        )
+
+    return (
+        "Generate a unique, creative science fiction story premise.\n\n"
+        "Requirements:\n"
+        "- Create a completely unique, memorable title (NEVER use generic titles like 'Untitled Expedition', 'The Unknown Journey', 'Unknown', etc.)\n"
+        "- Be highly creative: explore unusual, surreal, disturbing, or mind-bending sci-fi concepts\n"
+        "- Include a character named Tom who is an engineer (can be major or minor role)\n"
+        "- Each story must be completely unique and different from any previous story\n"
+        "- Each story must be somewhat absurd, ridiculous and surreal. Choose how much of each randomly.\n"
+        "- Write a detailed, engaging premise (2-3 sentences minimum)\n"
+        f"{style_instruction}\n"
+        "- DO NOT mention these authors by name in the title or premise\n"
+        "- Let their influence guide the tone, perspective, themes, and narrative approach\n"
+        f"{directives_block}\n"
+        "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
+        "{\n"
+        '  "title": "Your Unique Creative Title",\n'
+        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
+        '  "themes": ["theme1", "theme2"],\n'
+        '  "setting": "Brief setting description",\n'
+        '  "central_conflict": "The main conflict or problem",\n'
+        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
+        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
+        '  "genre_tags": ["tag1", "tag2", "tag3"] // Additional genre/style descriptors like "existential", "noir", "absurdist", "dystopian", etc.\n'
+        "}\n\n"
+        "Example titles for inspiration (create something different):\n"
+        "- Echoes of the Quantum Conductor\n"
+        "- The Symphony of Interfaces\n"
+        "- Resonance of the Distant Past\n"
+        "- Neural Labyrinth Protocol\n"
+        "- Cathedral of Borrowed Futures\n"
+        "- The Recursion Architects"
+    )
+
+
+async def _summarize_recent_story_stats(session, window: int) -> dict[str, Any]:
+    if window <= 0:
+        return {
+            "recent_story_count": 0,
+            "average_overall_score": 0.0,
+            "overall_score_span": None,
+            "most_common_tones": [],
+            "most_common_perspectives": [],
+            "most_common_genre_tags": [],
+            "frequent_style_authors": [],
+            "avg_absurdity_initial": 0.0,
+            "avg_absurdity_increment": 0.0,
+            "avg_surrealism_initial": 0.0,
+            "avg_surrealism_increment": 0.0,
+            "avg_ridiculousness_initial": 0.0,
+            "avg_ridiculousness_increment": 0.0,
+            "avg_insanity_initial": 0.0,
+            "avg_insanity_increment": 0.0,
+            "sample_titles": [],
+        }
+
+    stmt = (
+        select(Story)
+        .order_by(Story.created_at.desc())
+        .limit(window)
+        .options(selectinload(Story.evaluations))
+    )
+    stories = list((await session.execute(stmt)).scalars())
+    story_count = len(stories)
+    if story_count == 0:
+        return await _summarize_recent_story_stats(session, 0)
+
+    tones: Counter[str] = Counter()
+    perspectives: Counter[str] = Counter()
+    genres: Counter[str] = Counter()
+    authors: Counter[str] = Counter()
+
+    absurdity_initials: list[float] = []
+    absurdity_increments: list[float] = []
+    surrealism_initials: list[float] = []
+    surrealism_increments: list[float] = []
+    ridiculousness_initials: list[float] = []
+    ridiculousness_increments: list[float] = []
+    insanity_initials: list[float] = []
+    insanity_increments: list[float] = []
+    overall_scores: list[float] = []
+
+    for story in stories:
+        if story.tone:
+            tones[story.tone.lower()] += 1
+        if story.narrative_perspective:
+            perspectives[story.narrative_perspective.lower()] += 1
+        if story.genre_tags:
+            genres.update(tag.lower() for tag in story.genre_tags if isinstance(tag, str))
+        if story.style_authors:
+            authors.update(author for author in story.style_authors if isinstance(author, str))
+
+        if story.absurdity_initial is not None:
+            absurdity_initials.append(float(story.absurdity_initial))
+        if story.absurdity_increment is not None:
+            absurdity_increments.append(float(story.absurdity_increment))
+        if story.surrealism_initial is not None:
+            surrealism_initials.append(float(story.surrealism_initial))
+        if story.surrealism_increment is not None:
+            surrealism_increments.append(float(story.surrealism_increment))
+        if story.ridiculousness_initial is not None:
+            ridiculousness_initials.append(float(story.ridiculousness_initial))
+        if story.ridiculousness_increment is not None:
+            ridiculousness_increments.append(float(story.ridiculousness_increment))
+        if story.insanity_initial is not None:
+            insanity_initials.append(float(story.insanity_initial))
+        if story.insanity_increment is not None:
+            insanity_increments.append(float(story.insanity_increment))
+
+        if story.evaluations:
+            latest_eval = max(story.evaluations, key=lambda e: e.chapter_number)
+            if latest_eval.overall_score is not None:
+                overall_scores.append(float(latest_eval.overall_score))
+
+    stats = {
+        "recent_story_count": story_count,
+        "average_overall_score": round(_safe_mean(overall_scores), 3),
+        "overall_score_span": (
+            [round(min(overall_scores), 3), round(max(overall_scores), 3)]
+            if overall_scores
+            else None
+        ),
+        "most_common_tones": [tone for tone, _ in tones.most_common(5)],
+        "most_common_perspectives": [p for p, _ in perspectives.most_common(5)],
+        "most_common_genre_tags": [tag for tag, _ in genres.most_common(8)],
+        "frequent_style_authors": [author for author, _ in authors.most_common(8)],
+        "avg_absurdity_initial": round(_safe_mean(absurdity_initials), 3),
+        "avg_absurdity_increment": round(_safe_mean(absurdity_increments), 3),
+        "avg_surrealism_initial": round(_safe_mean(surrealism_initials), 3),
+        "avg_surrealism_increment": round(_safe_mean(surrealism_increments), 3),
+        "avg_ridiculousness_initial": round(_safe_mean(ridiculousness_initials), 3),
+        "avg_ridiculousness_increment": round(_safe_mean(ridiculousness_increments), 3),
+        "avg_insanity_initial": round(_safe_mean(insanity_initials), 3),
+        "avg_insanity_increment": round(_safe_mean(insanity_increments), 3),
+        "sample_titles": [story.title for story in stories[:5] if story.title],
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+    return stats
+
+
+def _fallback_prompt_variation(stats: dict[str, Any]) -> dict[str, Any]:
+    directives: list[str] = []
+    tones = stats.get("most_common_tones") or []
+    perspectives = stats.get("most_common_perspectives") or []
+    genres = stats.get("most_common_genre_tags") or []
+
+    if tones:
+        directives.append(
+            "Deliberately choose a tone that contrasts with recent favourites such as "
+            + ", ".join(tones[:3])
+            + "; explore an unexpected emotional register."
+        )
+    if perspectives:
+        directives.append(
+            "Switch narrative perspective away from common picks like "
+            + ", ".join(perspectives[:2])
+            + "; try something unusual or hybrid."
+        )
+    if genres:
+        directives.append(
+            "Invent new genre tags or mashups instead of repeating "
+            + ", ".join(genres[:4])
+            + "."
+        )
+
+    if not directives:
+        directives.append(
+            "Inject a wild conceptual twist that bends the premise structure (e.g., nonlinear timelines, meta-fiction, or bizarre constraints)."
+        )
+
+    rationale = (
+        "Generated heuristics locally because the prompt remix model was unavailable."
+    )
+    return {"directives": directives[:_MAX_DYNAMIC_DIRECTIVES], "rationale": rationale}
+
+
+async def _call_prompt_engineer(prompt: str, *, temperature: float) -> str:
+    model = _settings.openai_eval_model
+    model_lower = model.lower()
+    is_reasoning_model = any(x in model_lower for x in ["o1", "gpt-5", "reasoning"])
+    request_params: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are an inventive prompt designer who specialises in keeping creative systems surprising and dynamic.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    max_tokens = min(800, _settings.openai_max_tokens_eval)
+    if is_reasoning_model:
+        request_params["max_completion_tokens"] = min(max_tokens * 2, 4000)
+    else:
+        request_params["max_tokens"] = max_tokens
+
+    if "gpt-5" not in model_lower and not is_reasoning_model:
+        request_params["temperature"] = temperature
+
+    response = await _client.chat.completions.create(**request_params)
+    if not response.choices:
+        raise RuntimeError("Prompt engineer response contained no choices")
+
+    choice = response.choices[0]
+    message = getattr(choice, "message", None)
+    content = ""
+    if message is not None:
+        content = getattr(message, "content", "") or ""
+        if not content and hasattr(message, "text"):
+            content = getattr(message, "text") or ""
+
+    content = content.strip() if isinstance(content, str) else str(content).strip()
+    if not content:
+        raise RuntimeError("Prompt engineer response was empty")
+
+    return content
+
+
+async def _request_prompt_variation_from_model(
+    stats: dict[str, Any], variation_strength: float
+) -> dict[str, Any]:
+    stats_json = json.dumps(stats, indent=2, sort_keys=True)
+    prompt_lines = [
+        "We run an autonomous sci-fi story generator. The base prompt already demands unique titles, surreal energy, an engineer named Tom, and JSON output.",
+        "We care about variation more than maximising average quality scores. Use the recent story metrics below to propose new creative pushes.",
+        f"Variation strength: {variation_strength:.2f} (0 = gentle, 1 = extremely bold).",
+        "",
+        "Recent story snapshot (most recent first):",
+        stats_json,
+        "",
+        "Provide 2-4 concise imperative directives that we can append to the base prompt to shake things up.",
+        "The directives must not remove existing requirements (e.g., keep Tom the engineer, keep JSON structure) but should introduce fresh experiments.",
+        "Encourage swings into underexplored tones, structures, settings, or narrative devices.",
+        "Then explain your reasoning in <=80 words.",
+        "",
+        "Return only valid JSON: {\"directives\": [\"directive1\", ...], \"rationale\": \"brief explanation\"}.",
+    ]
+    prompt = "\n".join(prompt_lines)
+
+    temperature = 0.35 + (variation_strength * 0.45)
+    raw = await _call_prompt_engineer(prompt, temperature=temperature)
+    parsed = _safe_json_loads(raw)
+    if not parsed:
+        raise ValueError("Prompt engineer response was not valid JSON")
+    return parsed
+
+
+async def _ensure_prompt_state(session, config) -> tuple[dict[str, Any], bool]:
+    row = await session.get(SystemConfig, _PROMPT_STATE_KEY)
+    state: dict[str, Any] = {}
+    if row and isinstance(row.value, dict):
+        state = dict(row.value)
+
+    total_story_count = (
+        await session.execute(select(func.count()).select_from(Story))
+    ).scalar_one()
+    last_story_count = int(state.get("story_count_at_refresh", 0))
+    refresh_interval = max(1, int(config.premise_prompt_refresh_interval))
+    stories_since_refresh = total_story_count - last_story_count
+    needs_refresh = not state or stories_since_refresh >= refresh_interval
+
+    if not needs_refresh:
+        return state, False
+
+    stats = await _summarize_recent_story_stats(
+        session, int(config.premise_prompt_stats_window)
+    )
+    variation_strength = max(0.0, min(1.0, float(config.premise_prompt_variation_strength)))
+    try:
+        variation = await _request_prompt_variation_from_model(stats, variation_strength)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Prompt remix request failed, using fallback directives: %s", exc)
+        variation = _fallback_prompt_variation(stats)
+
+    directives = _clean_directives(variation.get("directives", []))
+    if not directives:
+        fallback = _fallback_prompt_variation(stats)
+        directives = _clean_directives(fallback.get("directives", []))
+        variation["rationale"] = variation.get("rationale") or fallback.get("rationale")
+
+    hurllol_title, hurllol_components = _generate_hurllol_title()
+
+    state = {
+        "directives": directives,
+        "rationale": variation.get("rationale", ""),
+        "generated_at": datetime.utcnow().isoformat(),
+        "story_count_at_refresh": int(total_story_count),
+        "stats_snapshot": stats,
+        "variation_strength": variation_strength,
+        "hurllol_title": hurllol_title,
+        "hurllol_title_components": hurllol_components,
+        "hurllol_title_generated_at": datetime.utcnow().isoformat(),
+    }
+
+    if row is None:
+        row = SystemConfig(key=_PROMPT_STATE_KEY, value=state)
+        session.add(row)
+    else:
+        row.value = state
+
+    await session.flush()
+    logger.info(
+        "Updated premise prompt directives (stories_since_refresh=%d, directives=%s)",
+        stories_since_refresh,
+        directives,
+    )
+    return state, True
+
+
+async def _load_current_prompt_state() -> dict[str, Any]:
+    config = None
+    async with get_session() as session:
+        config = await get_runtime_config(session)
+        state, _ = await _ensure_prompt_state(session, config)
+        await session.commit()
+    if not state:
+        strength = (
+            float(config.premise_prompt_variation_strength)
+            if config is not None
+            else 0.6
+        )
+        return {"directives": [], "variation_strength": strength}
+    return state
+
+
+async def get_premise_prompt_state(session: AsyncSession) -> dict[str, Any]:
+    config = await get_runtime_config(session)
+    state, _ = await _ensure_prompt_state(session, config)
+    if not state:
+        strength = float(config.premise_prompt_variation_strength)
+        return {"directives": [], "variation_strength": strength}
+    needs_hurllol_bootstrap = not state.get("hurllol_title")
+    if needs_hurllol_bootstrap:
+        title, components = _generate_hurllol_title()
+        patched = dict(state)
+        patched.update(
+            {
+                "hurllol_title": title,
+                "hurllol_title_components": components,
+                "hurllol_title_generated_at": datetime.utcnow().isoformat(),
+            }
+        )
+        row = await session.get(SystemConfig, _PROMPT_STATE_KEY)
+        if row is None:
+            row = SystemConfig(key=_PROMPT_STATE_KEY, value=patched)
+            session.add(row)
+        else:
+            row.value = patched
+        await session.flush()
+        return patched
+    return state
+
+
+async def update_premise_prompt_state(
+    session: AsyncSession,
+    *,
+    directives: Sequence[str] | None = None,
+    rationale: str | None = None,
+) -> dict[str, Any]:
+    state = await get_premise_prompt_state(session)
+    updated = dict(state)
+    changed = False
+    now = datetime.utcnow().isoformat()
+
+    if directives is not None:
+        cleaned = _clean_directives(directives)
+        updated["directives"] = cleaned
+        updated["generated_at"] = now
+        updated["manual_override"] = True
+        changed = True
+
+    if rationale is not None:
+        updated["rationale"] = rationale.strip()
+        updated["manual_override"] = True
+        changed = True
+
+    if not changed:
+        return updated
+
+    row = await session.get(SystemConfig, _PROMPT_STATE_KEY)
+    if row is None:
+        row = SystemConfig(key=_PROMPT_STATE_KEY, value=updated)
+        session.add(row)
+    else:
+        row.value = updated
+
+    await session.flush()
+    return updated
+
+
+async def get_hurllol_banner(session: AsyncSession) -> dict[str, Any]:
+    state = await get_premise_prompt_state(session)
+    raw_components = state.get("hurllol_title_components") or []
+    components = [str(component) for component in raw_components]
+    return {
+        "title": state.get("hurllol_title"),
+        "components": components,
+        "generated_at": state.get("hurllol_title_generated_at"),
+    }
 
 
 async def _call_openai(
@@ -268,37 +749,22 @@ async def generate_story_premise() -> dict[str, Any]:
         authors_list = ", ".join(selected_authors[:-1]) + f", and {selected_authors[-1]}"
         style_instruction = f"- Blend the writing styles and sensibilities of {authors_list}"
 
-    # More explicit prompt with stronger instructions
-    prompt = (
-        "Generate a unique, creative science fiction story premise.\n\n"
-        "Requirements:\n"
-        "- Create a completely unique, memorable title (NEVER use generic titles like 'Untitled Expedition', 'The Unknown Journey', 'Unknown', etc.)\n"
-        "- Be highly creative: explore unusual, surreal, disturbing, or mind-bending sci-fi concepts\n"
-        "- Include a character named Tom who is an engineer (can be major or minor role)\n"
-        "- Each story must be completely unique and different from any previous story\n"
-        "- Each story must be somewhat absurd, ridiculous and surreal. Choose how much of each randomly.\n"
-        "- Write a detailed, engaging premise (2-3 sentences minimum)\n"
-        f"{style_instruction}\n"
-        "- DO NOT mention these authors by name in the title or premise\n"
-        "- Let their influence guide the tone, perspective, themes, and narrative approach\n\n"
-        "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
-        "{\n"
-        '  "title": "Your Unique Creative Title",\n'
-        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
-        '  "themes": ["theme1", "theme2"],\n'
-        '  "setting": "Brief setting description",\n'
-        '  "central_conflict": "The main conflict or problem",\n'
-        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
-        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
-        '  "genre_tags": ["tag1", "tag2", "tag3"] // Additional genre/style descriptors like "existential", "noir", "absurdist", "dystopian", etc.\n'
-        "}\n\n"
-        "Example titles for inspiration (create something different):\n"
-        "- Echoes of the Quantum Conductor\n"
-        "- The Symphony of Interfaces\n"
-        "- Resonance of the Distant Past\n"
-        "- Neural Labyrinth Protocol\n"
-        "- Cathedral of Borrowed Futures\n"
-        "- The Recursion Architects"
+    prompt_state = await _load_current_prompt_state()
+    directives = prompt_state.get("directives", []) if isinstance(prompt_state, dict) else []
+    prompt = _render_premise_prompt(style_instruction, directives)
+    raw_strength = (
+        prompt_state.get("variation_strength")
+        if isinstance(prompt_state, dict)
+        else None
+    )
+    try:
+        variation_strength_value = float(raw_strength) if raw_strength is not None else 0.0
+    except (TypeError, ValueError):
+        variation_strength_value = 0.0
+    logger.debug(
+        "Premise prompt directives applied: %s (variation_strength=%.2f)",
+        directives,
+        variation_strength_value,
     )
 
     max_retries = 2
@@ -349,6 +815,14 @@ async def generate_story_premise() -> dict[str, Any]:
                     parsed["insanity_increment"] = insanity_increment
                     # Add style authors
                     parsed["style_authors"] = selected_authors
+                    parsed["prompt_directives"] = directives
+                    parsed["prompt_variation_strength"] = prompt_state.get(
+                        "variation_strength"
+                    )
+                    parsed["prompt_variation_rationale"] = prompt_state.get("rationale")
+                    parsed["prompt_directives_generated_at"] = prompt_state.get(
+                        "generated_at"
+                    )
                     # Ensure metadata fields exist
                     if "narrative_perspective" not in parsed:
                         parsed["narrative_perspective"] = "third-person-limited"
@@ -422,6 +896,10 @@ async def generate_story_premise() -> dict[str, Any]:
                 "narrative_perspective": "third-person-limited",
                 "tone": "mysterious",
                 "genre_tags": [],
+                "prompt_directives": directives,
+                "prompt_variation_strength": prompt_state.get("variation_strength"),
+                "prompt_variation_rationale": prompt_state.get("rationale"),
+                "prompt_directives_generated_at": prompt_state.get("generated_at"),
                 "style_authors": selected_authors,
                 "absurdity_initial": absurdity_initial,
                 "surrealism_initial": surrealism_initial,
@@ -453,6 +931,10 @@ async def generate_story_premise() -> dict[str, Any]:
         "narrative_perspective": "third-person-limited",
         "tone": "mysterious",
         "genre_tags": [],
+        "prompt_directives": directives,
+        "prompt_variation_strength": prompt_state.get("variation_strength"),
+        "prompt_variation_rationale": prompt_state.get("rationale"),
+        "prompt_directives_generated_at": prompt_state.get("generated_at"),
         "style_authors": selected_authors,
         "absurdity_initial": absurdity_initial,
         "surrealism_initial": surrealism_initial,
@@ -814,4 +1296,7 @@ __all__ = [
     "generate_chapter",
     "generate_cover_image",
     "spawn_new_story",
+    "get_premise_prompt_state",
+    "update_premise_prompt_state",
+    "get_hurllol_banner",
 ]

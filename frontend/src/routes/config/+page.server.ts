@@ -45,26 +45,41 @@ export const load: PageServerLoad = async ({ locals, fetch, cookies, url }) => {
 		headers.cookie = `${SESSION_COOKIE_NAME}=${sessionCookie}`;
 	}
 
-	const response = await fetch(`${apiBase}/api/config`, {
-		method: 'GET',
-		headers,
-		credentials: 'include'
-	});
+        const [configResponse, promptResponse] = await Promise.all([
+                fetch(`${apiBase}/api/config`, {
+                        method: 'GET',
+                        headers,
+                        credentials: 'include'
+                }),
+                fetch(`${apiBase}/api/prompts`, {
+                        method: 'GET',
+                        headers,
+                        credentials: 'include'
+                })
+        ]);
 
-	if (response.status === 401) {
-		cookies.delete(SESSION_COOKIE_NAME, COOKIE_OPTIONS);
-		throw redirect(302, buildRedirect(url));
-	}
+        if (configResponse.status === 401 || promptResponse.status === 401) {
+                cookies.delete(SESSION_COOKIE_NAME, COOKIE_OPTIONS);
+                throw redirect(302, buildRedirect(url));
+        }
 
-	if (!response.ok) {
-		throw error(response.status, 'Unable to load runtime configuration.');
-	}
+        if (!configResponse.ok) {
+                throw error(configResponse.status, 'Unable to load runtime configuration.');
+        }
 
-	const config = await response.json();
+        if (!promptResponse.ok) {
+                throw error(promptResponse.status, 'Unable to load prompt state.');
+        }
 
-	return {
-		config,
-		user: locals.user
-	};
+        const [config, prompts] = await Promise.all([
+                configResponse.json(),
+                promptResponse.json()
+        ]);
+
+        return {
+                config,
+                prompts,
+                user: locals.user
+        };
 };
 

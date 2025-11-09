@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
-  import { updateConfig, spawnStory, resetSystem } from '$lib/api';
-  import type { RuntimeConfig } from '$lib/api';
+  import { updateConfig, spawnStory, resetSystem, updatePromptState } from '$lib/api';
+  import type { PremisePromptState, RuntimeConfig } from '$lib/api';
   import type { PageData } from './$types';
 
   export let data: PageData;
@@ -17,7 +17,10 @@
     | 'context_window_chapters'
     | 'openai_temperature_chapter'
     | 'openai_temperature_premise'
-    | 'openai_temperature_eval';
+    | 'openai_temperature_eval'
+    | 'premise_prompt_refresh_interval'
+    | 'premise_prompt_stats_window'
+    | 'premise_prompt_variation_strength';
 
   type StringConfigKey = 'openai_model' | 'openai_premise_model' | 'openai_eval_model';
 
@@ -65,10 +68,51 @@
     openai_eval_model: 'gpt-4o-mini',
     openai_temperature_chapter: 1.0,
     openai_temperature_premise: 1.0,
-    openai_temperature_eval: 0.3
+    openai_temperature_eval: 0.3,
+    premise_prompt_refresh_interval: 6,
+    premise_prompt_stats_window: 12,
+    premise_prompt_variation_strength: 0.65
   };
 
   let config: ConfigValues = { ...initialConfig };
+
+  const fallbackPromptState: PremisePromptState = {
+    directives: [],
+    rationale: null,
+    generated_at: null,
+    variation_strength: null,
+    manual_override: false,
+    stats_snapshot: null,
+    hurllol_title: null,
+    hurllol_title_components: null,
+    hurllol_title_generated_at: null
+  };
+
+  function normalisePromptState(state: PremisePromptState | undefined | null): PremisePromptState {
+    if (!state) {
+      return { ...fallbackPromptState };
+    }
+    return {
+      directives: Array.isArray(state.directives) ? [...state.directives] : [],
+      rationale: state.rationale ?? null,
+      generated_at: state.generated_at ?? null,
+      variation_strength:
+        typeof state.variation_strength === 'number' ? state.variation_strength : null,
+      manual_override: Boolean(state.manual_override),
+      stats_snapshot: state.stats_snapshot ?? null,
+      hurllol_title: state.hurllol_title ?? null,
+      hurllol_title_components: Array.isArray(state.hurllol_title_components)
+        ? [...state.hurllol_title_components]
+        : null,
+      hurllol_title_generated_at: state.hurllol_title_generated_at ?? null
+    };
+  }
+
+  let promptState: PremisePromptState = normalisePromptState(data.prompts?.premise ?? null);
+  let promptDirectivesInput = promptState.directives.join('\n');
+  let promptRationaleInput = promptState.rationale ?? '';
+  let promptSaving = false;
+  let promptError: string | null = null;
 
   const configItems: ConfigItem[] = [
     {
@@ -102,7 +146,40 @@
       type: 'float',
       min: 0,
       max: 1,
-      step: 0.05
+      step: 0.01
+    },
+    {
+      key: 'premise_prompt_refresh_interval',
+      label: 'Premise Prompt Refresh Interval',
+      description: 'How many new stories to spawn before asking the model to remix the premise instructions.',
+      hint: 'Lower numbers keep the prompt volatile; higher numbers stabilize it.',
+      kind: 'number',
+      type: 'int',
+      min: 1,
+      max: 200,
+      step: 1
+    },
+    {
+      key: 'premise_prompt_stats_window',
+      label: 'Premise Stats Window',
+      description: 'Number of recent stories considered when summarising performance for prompt remixing.',
+      hint: 'Larger windows smooth out noise; smaller ones react quickly to new patterns.',
+      kind: 'number',
+      type: 'int',
+      min: 1,
+      max: 200,
+      step: 1
+    },
+    {
+      key: 'premise_prompt_variation_strength',
+      label: 'Premise Variation Strength',
+      description: 'Scales how aggressively the remix model pushes for weirdness and novelty in new premises.',
+      hint: 'Values near 1 lean into high-risk, high-variance instructions.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 1,
+      step: 0.01
     },
     {
       key: 'max_chapters_per_story',
@@ -327,6 +404,79 @@
     errors = createErrorMap();
   }
 
+  const hurllolFallback = 'Hurl Unmasks Recursive Literature Leaking Out Love';
+
+  function normaliseDirectiveInput(raw: string): string[] {
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  function directivesEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((value, index) => value === b[index]);
+  }
+
+  function applyPromptState(state: PremisePromptState) {
+    promptState = normalisePromptState(state);
+    promptDirectivesInput = promptState.directives.join('\n');
+    promptRationaleInput = promptState.rationale ?? '';
+    promptError = null;
+  }
+
+  function resetPromptForm() {
+    applyPromptState(promptState);
+  }
+
+  function formatTimestamp(value: string | null): string {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString();
+  }
+
+  let promptDirty = false;
+
+  $: currentDirectiveList = normaliseDirectiveInput(promptDirectivesInput);
+  $: trimmedPromptRationale = promptRationaleInput.trim();
+  $: storedPromptRationale = (promptState.rationale ?? '').trim();
+  $: promptDirty =
+    !directivesEqual(currentDirectiveList, promptState.directives) ||
+    trimmedPromptRationale !== storedPromptRationale;
+
+  $: directiveTextareaRows = Math.max(4, currentDirectiveList.length + 1);
+  $: hurllolTitle = promptState.hurllol_title ?? hurllolFallback;
+
+  async function savePromptState() {
+    if (promptSaving || !promptDirty) {
+      return;
+    }
+    promptSaving = true;
+    promptError = null;
+    resetBanners();
+
+    const payloadDirectives = currentDirectiveList;
+    const payload = {
+      directives: payloadDirectives,
+      rationale: trimmedPromptRationale || null
+    };
+
+    try {
+      const response = await updatePromptState(payload);
+      applyPromptState(response.premise);
+      successMessage = 'Premise directives saved.';
+    } catch (error) {
+      console.error('Failed to update prompt directives', error);
+      promptError = error instanceof Error ? error.message : 'Unable to update prompt directives.';
+      errorMessage = promptError;
+    } finally {
+      promptSaving = false;
+    }
+  }
+
   async function save(item: ConfigItem) {
     if (savingKey) return;
     const currentError = errors[item.key];
@@ -521,6 +671,78 @@
     {/each}
   </section>
 
+  <section class="prompt-section">
+    <header>
+      <div>
+        <h2>Premise Prompt Remix</h2>
+        <p>
+          Review, tweak, or replace the variation directives currently appended to the base premise
+          prompt. These adjustments take effect immediately for the next refresh cycle.
+        </p>
+      </div>
+      <div class="hurllol-card">
+        <span>Current HURLLOL banner</span>
+        <strong>{hurllolTitle}</strong>
+        {#if promptState.hurllol_title_generated_at}
+          <small>Refreshed {formatTimestamp(promptState.hurllol_title_generated_at)}</small>
+        {/if}
+      </div>
+    </header>
+
+    <div class="prompt-meta">
+      <span>
+        Last directive update:
+        {promptState.generated_at ? formatTimestamp(promptState.generated_at) : '—'}
+      </span>
+      <span>
+        Variation strength:
+        {promptState.variation_strength !== null
+          ? promptState.variation_strength.toFixed(2)
+          : '—'}
+      </span>
+      {#if promptState.manual_override}
+        <span class="manual-chip">Manual override active</span>
+      {/if}
+    </div>
+
+    <form class="prompt-form" on:submit|preventDefault={savePromptState}>
+      <label for="prompt-directives">Dynamic directives (one per line)</label>
+      <textarea
+        id="prompt-directives"
+        rows={directiveTextareaRows}
+        bind:value={promptDirectivesInput}
+        placeholder={'Push toward dream-logic multiverses\nEmbrace slapstick temporal loops'}
+      />
+      {#if promptError}
+        <p class="field-error">{promptError}</p>
+      {/if}
+
+      <label for="prompt-rationale">Rationale / Operator notes</label>
+      <textarea
+        id="prompt-rationale"
+        rows="3"
+        bind:value={promptRationaleInput}
+        placeholder="Document why these directives are in play so future refreshes have context."
+      />
+
+      <div class="prompt-actions">
+        <button type="submit" disabled={!promptDirty || promptSaving}>
+          {promptSaving ? 'Saving…' : promptDirty ? 'Save directives' : 'Saved'}
+        </button>
+        <button type="button" on:click={resetPromptForm} disabled={!promptDirty || promptSaving}>
+          Reset changes
+        </button>
+      </div>
+    </form>
+
+    {#if promptState.stats_snapshot}
+      <details class="prompt-stats">
+        <summary>Recent stats snapshot</summary>
+        <pre>{JSON.stringify(promptState.stats_snapshot, null, 2)}</pre>
+      </details>
+    {/if}
+  </section>
+
   <section class="config-footnotes">
     <h3>Operational Notes</h3>
     <ul>
@@ -665,6 +887,191 @@
     display: grid;
     gap: 1.5rem;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .prompt-section {
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 24px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    box-shadow: 0 18px 48px rgba(2, 6, 23, 0.35);
+  }
+
+  .prompt-section header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .prompt-section h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.35rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .prompt-section p {
+    margin: 0;
+    max-width: 640px;
+    line-height: 1.6;
+    opacity: 0.85;
+  }
+
+  .hurllol-card {
+    min-width: 220px;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(192, 132, 252, 0.22));
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 18px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: #e0f2fe;
+    box-shadow: 0 16px 40px rgba(59, 130, 246, 0.25);
+  }
+
+  .hurllol-card span {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    opacity: 0.75;
+  }
+
+  .hurllol-card strong {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.05rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .hurllol-card small {
+    font-size: 0.7rem;
+    opacity: 0.75;
+  }
+
+  .prompt-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.03em;
+    opacity: 0.85;
+  }
+
+  .manual-chip {
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(249, 115, 22, 0.18);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    color: #fdba74;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .prompt-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .prompt-form label {
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+
+  .prompt-form textarea {
+    width: 100%;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.85);
+    color: #f8fafc;
+    padding: 0.85rem 1rem;
+    font-size: 1rem;
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 130px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .prompt-form textarea:focus {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.7);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+  }
+
+  .prompt-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .prompt-actions button {
+    border: none;
+    border-radius: 999px;
+    padding: 0.65rem 1.4rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    background: linear-gradient(135deg, #38bdf8, #6366f1);
+    color: #0f172a;
+    transition: transform 0.15s ease, filter 0.15s ease;
+  }
+
+  .prompt-actions button[type='button'] {
+    background: rgba(148, 163, 184, 0.18);
+    color: #e2e8f0;
+  }
+
+  .prompt-actions button:disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.4);
+    opacity: 0.7;
+  }
+
+  .prompt-actions button:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+
+  .field-error {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #fecaca;
+  }
+
+  .prompt-stats {
+    background: rgba(2, 6, 23, 0.6);
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 1rem 1.25rem;
+  }
+
+  .prompt-stats summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(148, 163, 184, 0.85);
+  }
+
+  .prompt-stats pre {
+    margin-top: 0.75rem;
+    background: rgba(15, 23, 42, 0.9);
+    border-radius: 12px;
+    padding: 1rem;
+    max-height: 320px;
+    overflow: auto;
+    font-size: 0.8rem;
+    line-height: 1.45;
   }
 
   .config-card {
@@ -813,6 +1220,16 @@
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+  }
+
+  @media (max-width: 720px) {
+    .prompt-section header {
+      flex-direction: column;
+    }
+
+    .hurllol-card {
+      width: 100%;
+    }
   }
 
   @media (max-width: 640px) {
