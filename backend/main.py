@@ -215,7 +215,7 @@ class UniverseElementRead(BaseModel):
     element_type: str
     name: str
     description: str | None
-    metadata: dict[str, Any] | None
+    element_metadata: dict[str, Any] | None
     extracted_at: datetime
 
     @classmethod
@@ -227,7 +227,7 @@ class UniverseElementRead(BaseModel):
             element_type=element.element_type,
             name=element.name,
             description=element.description,
-            metadata=element.metadata,
+            element_metadata=element.element_metadata,
             extracted_at=element.extracted_at,
         )
 
