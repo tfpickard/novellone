@@ -3,17 +3,379 @@ import logging
 import random
 import re
 import time
+from collections import Counter
+from datetime import datetime
+from statistics import mean
 from typing import Any, Sequence
 
 from openai import AsyncOpenAI, OpenAIError
+from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from config import get_settings
-from models import Chapter, Story
+from config_store import get_runtime_config
+from database import get_session
+from models import Chapter, Story, SystemConfig
 
 logger = logging.getLogger(__name__)
 
 _settings = get_settings()
 _client = AsyncOpenAI(api_key=_settings.openai_api_key)
+
+_PROMPT_STATE_KEY = "premise_prompt_state"
+_MAX_DYNAMIC_DIRECTIVES = 4
+
+
+def _safe_mean(values: Sequence[float]) -> float:
+    return float(mean(values)) if values else 0.0
+
+
+def _render_premise_prompt(style_instruction: str, directives: Sequence[str]) -> str:
+    cleaned_directives = [
+        d.strip() for d in directives if isinstance(d, str) and d.strip()
+    ]
+    directives_block = ""
+    if cleaned_directives:
+        directive_lines = "\n".join(f"- {line}" for line in cleaned_directives)
+        directives_block = (
+            "\nDynamic variation objectives (embrace novelty over safety, even if scores dip a little):\n"
+            f"{directive_lines}\n"
+        )
+
+    return (
+        "Generate a unique, creative science fiction story premise.\n\n"
+        "Requirements:\n"
+        "- Create a completely unique, memorable title (NEVER use generic titles like 'Untitled Expedition', 'The Unknown Journey', 'Unknown', etc.)\n"
+        "- Be highly creative: explore unusual, surreal, disturbing, or mind-bending sci-fi concepts\n"
+        "- Include a character named Tom who is an engineer (can be major or minor role)\n"
+        "- Each story must be completely unique and different from any previous story\n"
+        "- Each story must be somewhat absurd, ridiculous and surreal. Choose how much of each randomly.\n"
+        "- Write a detailed, engaging premise (2-3 sentences minimum)\n"
+        f"{style_instruction}\n"
+        "- DO NOT mention these authors by name in the title or premise\n"
+        "- Let their influence guide the tone, perspective, themes, and narrative approach\n"
+        f"{directives_block}\n"
+        "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
+        "{\n"
+        '  "title": "Your Unique Creative Title",\n'
+        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
+        '  "themes": ["theme1", "theme2"],\n'
+        '  "setting": "Brief setting description",\n'
+        '  "central_conflict": "The main conflict or problem",\n'
+        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
+        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
+        '  "genre_tags": ["tag1", "tag2", "tag3"] // Additional genre/style descriptors like "existential", "noir", "absurdist", "dystopian", etc.\n'
+        "}\n\n"
+        "Example titles for inspiration (create something different):\n"
+        "- Echoes of the Quantum Conductor\n"
+        "- The Symphony of Interfaces\n"
+        "- Resonance of the Distant Past\n"
+        "- Neural Labyrinth Protocol\n"
+        "- Cathedral of Borrowed Futures\n"
+        "- The Recursion Architects"
+    )
+
+
+async def _summarize_recent_story_stats(session, window: int) -> dict[str, Any]:
+    if window <= 0:
+        return {
+            "recent_story_count": 0,
+            "average_overall_score": 0.0,
+            "overall_score_span": None,
+            "most_common_tones": [],
+            "most_common_perspectives": [],
+            "most_common_genre_tags": [],
+            "frequent_style_authors": [],
+            "avg_absurdity_initial": 0.0,
+            "avg_absurdity_increment": 0.0,
+            "avg_surrealism_initial": 0.0,
+            "avg_surrealism_increment": 0.0,
+            "avg_ridiculousness_initial": 0.0,
+            "avg_ridiculousness_increment": 0.0,
+            "avg_insanity_initial": 0.0,
+            "avg_insanity_increment": 0.0,
+            "sample_titles": [],
+        }
+
+    stmt = (
+        select(Story)
+        .order_by(Story.created_at.desc())
+        .limit(window)
+        .options(selectinload(Story.evaluations))
+    )
+    stories = list((await session.execute(stmt)).scalars())
+    story_count = len(stories)
+    if story_count == 0:
+        return await _summarize_recent_story_stats(session, 0)
+
+    tones: Counter[str] = Counter()
+    perspectives: Counter[str] = Counter()
+    genres: Counter[str] = Counter()
+    authors: Counter[str] = Counter()
+
+    absurdity_initials: list[float] = []
+    absurdity_increments: list[float] = []
+    surrealism_initials: list[float] = []
+    surrealism_increments: list[float] = []
+    ridiculousness_initials: list[float] = []
+    ridiculousness_increments: list[float] = []
+    insanity_initials: list[float] = []
+    insanity_increments: list[float] = []
+    overall_scores: list[float] = []
+
+    for story in stories:
+        if story.tone:
+            tones[story.tone.lower()] += 1
+        if story.narrative_perspective:
+            perspectives[story.narrative_perspective.lower()] += 1
+        if story.genre_tags:
+            genres.update(
+                tag.lower() for tag in story.genre_tags if isinstance(tag, str)
+            )
+        if story.style_authors:
+            authors.update(
+                author for author in story.style_authors if isinstance(author, str)
+            )
+
+        if story.absurdity_initial is not None:
+            absurdity_initials.append(float(story.absurdity_initial))
+        if story.absurdity_increment is not None:
+            absurdity_increments.append(float(story.absurdity_increment))
+        if story.surrealism_initial is not None:
+            surrealism_initials.append(float(story.surrealism_initial))
+        if story.surrealism_increment is not None:
+            surrealism_increments.append(float(story.surrealism_increment))
+        if story.ridiculousness_initial is not None:
+            ridiculousness_initials.append(float(story.ridiculousness_initial))
+        if story.ridiculousness_increment is not None:
+            ridiculousness_increments.append(float(story.ridiculousness_increment))
+        if story.insanity_initial is not None:
+            insanity_initials.append(float(story.insanity_initial))
+        if story.insanity_increment is not None:
+            insanity_increments.append(float(story.insanity_increment))
+
+        if story.evaluations:
+            latest_eval = max(story.evaluations, key=lambda e: e.chapter_number)
+            if latest_eval.overall_score is not None:
+                overall_scores.append(float(latest_eval.overall_score))
+
+    stats = {
+        "recent_story_count": story_count,
+        "average_overall_score": round(_safe_mean(overall_scores), 3),
+        "overall_score_span": (
+            [round(min(overall_scores), 3), round(max(overall_scores), 3)]
+            if overall_scores
+            else None
+        ),
+        "most_common_tones": [tone for tone, _ in tones.most_common(5)],
+        "most_common_perspectives": [p for p, _ in perspectives.most_common(5)],
+        "most_common_genre_tags": [tag for tag, _ in genres.most_common(8)],
+        "frequent_style_authors": [author for author, _ in authors.most_common(8)],
+        "avg_absurdity_initial": round(_safe_mean(absurdity_initials), 3),
+        "avg_absurdity_increment": round(_safe_mean(absurdity_increments), 3),
+        "avg_surrealism_initial": round(_safe_mean(surrealism_initials), 3),
+        "avg_surrealism_increment": round(_safe_mean(surrealism_increments), 3),
+        "avg_ridiculousness_initial": round(_safe_mean(ridiculousness_initials), 3),
+        "avg_ridiculousness_increment": round(_safe_mean(ridiculousness_increments), 3),
+        "avg_insanity_initial": round(_safe_mean(insanity_initials), 3),
+        "avg_insanity_increment": round(_safe_mean(insanity_increments), 3),
+        "sample_titles": [story.title for story in stories[:5] if story.title],
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+    return stats
+
+
+def _fallback_prompt_variation(stats: dict[str, Any]) -> dict[str, Any]:
+    directives: list[str] = []
+    tones = stats.get("most_common_tones") or []
+    perspectives = stats.get("most_common_perspectives") or []
+    genres = stats.get("most_common_genre_tags") or []
+
+    if tones:
+        directives.append(
+            "Deliberately choose a tone that contrasts with recent favourites such as "
+            + ", ".join(tones[:3])
+            + "; explore an unexpected emotional register."
+        )
+    if perspectives:
+        directives.append(
+            "Switch narrative perspective away from common picks like "
+            + ", ".join(perspectives[:2])
+            + "; try something unusual or hybrid."
+        )
+    if genres:
+        directives.append(
+            "Invent new genre tags or mashups instead of repeating "
+            + ", ".join(genres[:4])
+            + "."
+        )
+
+    if not directives:
+        directives.append(
+            "Inject a wild conceptual twist that bends the premise structure (e.g., nonlinear timelines, meta-fiction, or bizarre constraints)."
+        )
+
+    rationale = (
+        "Generated heuristics locally because the prompt remix model was unavailable."
+    )
+    return {"directives": directives[:_MAX_DYNAMIC_DIRECTIVES], "rationale": rationale}
+
+
+async def _call_prompt_engineer(prompt: str, *, temperature: float) -> str:
+    model = _settings.openai_eval_model
+    model_lower = model.lower()
+    is_reasoning_model = any(x in model_lower for x in ["o1", "gpt-5", "reasoning"])
+    request_params: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are an inventive prompt designer who specialises in keeping creative systems surprising and dynamic.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    max_tokens = min(800, _settings.openai_max_tokens_eval)
+    if is_reasoning_model:
+        request_params["max_completion_tokens"] = min(max_tokens * 2, 4000)
+    else:
+        request_params["max_tokens"] = max_tokens
+
+    if "gpt-5" not in model_lower and not is_reasoning_model:
+        request_params["temperature"] = temperature
+
+    response = await _client.chat.completions.create(**request_params)
+    if not response.choices:
+        raise RuntimeError("Prompt engineer response contained no choices")
+
+    choice = response.choices[0]
+    message = getattr(choice, "message", None)
+    content = ""
+    if message is not None:
+        content = getattr(message, "content", "") or ""
+        if not content and hasattr(message, "text"):
+            content = getattr(message, "text") or ""
+
+    content = content.strip() if isinstance(content, str) else str(content).strip()
+    if not content:
+        raise RuntimeError("Prompt engineer response was empty")
+
+    return content
+
+
+async def _request_prompt_variation_from_model(
+    stats: dict[str, Any], variation_strength: float
+) -> dict[str, Any]:
+    stats_json = json.dumps(stats, indent=2, sort_keys=True)
+    prompt = (
+        "We run an autonomous sci-fi story generator. The base prompt already demands unique titles, surreal energy, an engineer named Tom, and JSON output.\n"
+        "We care about variation more than maximising average quality scores. Use the recent story metrics below to propose new creative pushes.\n"
+        f"Variation strength: {variation_strength:.2f} (0 = gentle, 1 = extremely bold).\n\n"
+        "Recent story snapshot (most recent first):\n"
+        f"{stats_json}\n\n"
+        "Provide 2-4 concise imperative directives that we can append to the base prompt to shake things up."
+        " The directives must not remove existing requirements (e.g., keep Tom the engineer, keep JSON structure) but should introduce fresh experiments."
+        " Encourage swings into underexplored tones, structures, settings, or narrative devices."
+        " Then explain your reasoning in <=80 words.\n\n"
+        f'Return only valid JSON: {"directives": ["directive1", ...], "rationale": "brief explanation"}.'
+    )
+
+    temperature = 0.35 + (variation_strength * 0.45)
+    raw = await _call_prompt_engineer(prompt, temperature=temperature)
+    parsed = _safe_json_loads(raw)
+    if not parsed:
+        raise ValueError("Prompt engineer response was not valid JSON")
+    return parsed
+
+
+async def _ensure_prompt_state(session, config) -> tuple[dict[str, Any], bool]:
+    row = await session.get(SystemConfig, _PROMPT_STATE_KEY)
+    state: dict[str, Any] = {}
+    if row and isinstance(row.value, dict):
+        state = dict(row.value)
+
+    total_story_count = (
+        await session.execute(select(func.count()).select_from(Story))
+    ).scalar_one()
+    last_story_count = int(state.get("story_count_at_refresh", 0))
+    refresh_interval = max(1, int(config.premise_prompt_refresh_interval))
+    stories_since_refresh = total_story_count - last_story_count
+    needs_refresh = not state or stories_since_refresh >= refresh_interval
+
+    if not needs_refresh:
+        return state, False
+
+    stats = await _summarize_recent_story_stats(
+        session, int(config.premise_prompt_stats_window)
+    )
+    variation_strength = max(
+        0.0, min(1.0, float(config.premise_prompt_variation_strength))
+    )
+    try:
+        variation = await _request_prompt_variation_from_model(
+            stats, variation_strength
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "Prompt remix request failed, using fallback directives: %s", exc
+        )
+        variation = _fallback_prompt_variation(stats)
+
+    directives = [
+        d.strip()
+        for d in variation.get("directives", [])
+        if isinstance(d, str) and d.strip()
+    ]
+    if not directives:
+        fallback = _fallback_prompt_variation(stats)
+        directives = [
+            d.strip()
+            for d in fallback.get("directives", [])
+            if isinstance(d, str) and d.strip()
+        ]
+        variation["rationale"] = variation.get("rationale") or fallback.get("rationale")
+
+    directives = directives[:_MAX_DYNAMIC_DIRECTIVES]
+
+    state = {
+        "directives": directives,
+        "rationale": variation.get("rationale", ""),
+        "generated_at": datetime.utcnow().isoformat(),
+        "story_count_at_refresh": int(total_story_count),
+        "stats_snapshot": stats,
+        "variation_strength": variation_strength,
+    }
+
+    if row is None:
+        row = SystemConfig(key=_PROMPT_STATE_KEY, value=state)
+        session.add(row)
+    else:
+        row.value = state
+
+    await session.flush()
+    logger.info(
+        "Updated premise prompt directives (stories_since_refresh=%d, directives=%s)",
+        stories_since_refresh,
+        directives,
+    )
+    return state, True
+
+
+async def _load_current_prompt_state() -> dict[str, Any]:
+    config = None
+    async with get_session() as session:
+        config = await get_runtime_config(session)
+        state, _ = await _ensure_prompt_state(session, config)
+        await session.commit()
+    if not state:
+        strength = (
+            float(config.premise_prompt_variation_strength)
+            if config is not None
+            else 0.6
+        )
+        return {"directives": [], "variation_strength": strength}
+    return state
 
 
 async def _call_openai(
@@ -237,22 +599,50 @@ async def generate_story_premise() -> dict[str, Any]:
 
     logger.info(
         "Generated chaos parameters: absurdity=%.3f+%.3f, surrealism=%.3f+%.3f, ridiculousness=%.3f+%.3f, insanity=%.3f+%.3f",
-        absurdity_initial, absurdity_increment,
-        surrealism_initial, surrealism_increment,
-        ridiculousness_initial, ridiculousness_increment,
-        insanity_initial, insanity_increment,
+        absurdity_initial,
+        absurdity_increment,
+        surrealism_initial,
+        surrealism_increment,
+        ridiculousness_initial,
+        ridiculousness_increment,
+        insanity_initial,
+        insanity_increment,
     )
 
     # List of famous 20th century authors with distinctive styles
     famous_authors = [
-        "Franz Kafka", "Jorge Luis Borges", "Italo Calvino", "Gabriel García Márquez",
-        "Kurt Vonnegut", "Philip K. Dick", "Ursula K. Le Guin", "Stanisław Lem",
-        "Samuel Beckett", "Virginia Woolf", "James Joyce", "William S. Burroughs",
-        "Haruki Murakami", "Octavia Butler", "Ray Bradbury", "Isaac Asimov",
-        "J.G. Ballard", "William Gibson", "Margaret Atwood", "Aldous Huxley",
-        "George Orwell", "Arthur C. Clarke", "Doris Lessing", "Thomas Pynchon",
-        "Don DeLillo", "Chinua Achebe", "Toni Morrison", "Gabriel García Márquez",
-        "Salman Rushdie", "Milan Kundera", "Cormac McCarthy", "Vladimir Nabokov"
+        "Franz Kafka",
+        "Jorge Luis Borges",
+        "Italo Calvino",
+        "Gabriel García Márquez",
+        "Kurt Vonnegut",
+        "Philip K. Dick",
+        "Ursula K. Le Guin",
+        "Stanisław Lem",
+        "Samuel Beckett",
+        "Virginia Woolf",
+        "James Joyce",
+        "William S. Burroughs",
+        "Haruki Murakami",
+        "Octavia Butler",
+        "Ray Bradbury",
+        "Isaac Asimov",
+        "J.G. Ballard",
+        "William Gibson",
+        "Margaret Atwood",
+        "Aldous Huxley",
+        "George Orwell",
+        "Arthur C. Clarke",
+        "Doris Lessing",
+        "Thomas Pynchon",
+        "Don DeLillo",
+        "Chinua Achebe",
+        "Toni Morrison",
+        "Gabriel García Márquez",
+        "Salman Rushdie",
+        "Milan Kundera",
+        "Cormac McCarthy",
+        "Vladimir Nabokov",
     ]
 
     # Randomly select 1-3 authors
@@ -263,42 +653,37 @@ async def generate_story_premise() -> dict[str, Any]:
 
     # Build style instruction
     if len(selected_authors) == 1:
-        style_instruction = f"- Adopt the writing style and sensibilities of {selected_authors[0]}"
+        style_instruction = (
+            f"- Adopt the writing style and sensibilities of {selected_authors[0]}"
+        )
     else:
-        authors_list = ", ".join(selected_authors[:-1]) + f", and {selected_authors[-1]}"
-        style_instruction = f"- Blend the writing styles and sensibilities of {authors_list}"
+        authors_list = (
+            ", ".join(selected_authors[:-1]) + f", and {selected_authors[-1]}"
+        )
+        style_instruction = (
+            f"- Blend the writing styles and sensibilities of {authors_list}"
+        )
 
-    # More explicit prompt with stronger instructions
-    prompt = (
-        "Generate a unique, creative science fiction story premise.\n\n"
-        "Requirements:\n"
-        "- Create a completely unique, memorable title (NEVER use generic titles like 'Untitled Expedition', 'The Unknown Journey', 'Unknown', etc.)\n"
-        "- Be highly creative: explore unusual, surreal, disturbing, or mind-bending sci-fi concepts\n"
-        "- Include a character named Tom who is an engineer (can be major or minor role)\n"
-        "- Each story must be completely unique and different from any previous story\n"
-        "- Each story must be somewhat absurd, ridiculous and surreal. Choose how much of each randomly.\n"
-        "- Write a detailed, engaging premise (2-3 sentences minimum)\n"
-        f"{style_instruction}\n"
-        "- DO NOT mention these authors by name in the title or premise\n"
-        "- Let their influence guide the tone, perspective, themes, and narrative approach\n\n"
-        "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
-        "{\n"
-        '  "title": "Your Unique Creative Title",\n'
-        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
-        '  "themes": ["theme1", "theme2"],\n'
-        '  "setting": "Brief setting description",\n'
-        '  "central_conflict": "The main conflict or problem",\n'
-        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
-        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
-        '  "genre_tags": ["tag1", "tag2", "tag3"] // Additional genre/style descriptors like "existential", "noir", "absurdist", "dystopian", etc.\n'
-        "}\n\n"
-        "Example titles for inspiration (create something different):\n"
-        "- Echoes of the Quantum Conductor\n"
-        "- The Symphony of Interfaces\n"
-        "- Resonance of the Distant Past\n"
-        "- Neural Labyrinth Protocol\n"
-        "- Cathedral of Borrowed Futures\n"
-        "- The Recursion Architects"
+    prompt_state = await _load_current_prompt_state()
+    directives = (
+        prompt_state.get("directives", []) if isinstance(prompt_state, dict) else []
+    )
+    prompt = _render_premise_prompt(style_instruction, directives)
+    raw_strength = (
+        prompt_state.get("variation_strength")
+        if isinstance(prompt_state, dict)
+        else None
+    )
+    try:
+        variation_strength_value = (
+            float(raw_strength) if raw_strength is not None else 0.0
+        )
+    except (TypeError, ValueError):
+        variation_strength_value = 0.0
+    logger.debug(
+        "Premise prompt directives applied: %s (variation_strength=%.2f)",
+        directives,
+        variation_strength_value,
     )
 
     max_retries = 2
@@ -349,6 +734,14 @@ async def generate_story_premise() -> dict[str, Any]:
                     parsed["insanity_increment"] = insanity_increment
                     # Add style authors
                     parsed["style_authors"] = selected_authors
+                    parsed["prompt_directives"] = directives
+                    parsed["prompt_variation_strength"] = prompt_state.get(
+                        "variation_strength"
+                    )
+                    parsed["prompt_variation_rationale"] = prompt_state.get("rationale")
+                    parsed["prompt_directives_generated_at"] = prompt_state.get(
+                        "generated_at"
+                    )
                     # Ensure metadata fields exist
                     if "narrative_perspective" not in parsed:
                         parsed["narrative_perspective"] = "third-person-limited"
@@ -422,6 +815,10 @@ async def generate_story_premise() -> dict[str, Any]:
                 "narrative_perspective": "third-person-limited",
                 "tone": "mysterious",
                 "genre_tags": [],
+                "prompt_directives": directives,
+                "prompt_variation_strength": prompt_state.get("variation_strength"),
+                "prompt_variation_rationale": prompt_state.get("rationale"),
+                "prompt_directives_generated_at": prompt_state.get("generated_at"),
                 "style_authors": selected_authors,
                 "absurdity_initial": absurdity_initial,
                 "surrealism_initial": surrealism_initial,
@@ -453,6 +850,10 @@ async def generate_story_premise() -> dict[str, Any]:
         "narrative_perspective": "third-person-limited",
         "tone": "mysterious",
         "genre_tags": [],
+        "prompt_directives": directives,
+        "prompt_variation_strength": prompt_state.get("variation_strength"),
+        "prompt_variation_rationale": prompt_state.get("rationale"),
+        "prompt_directives_generated_at": prompt_state.get("generated_at"),
         "style_authors": selected_authors,
         "absurdity_initial": absurdity_initial,
         "surrealism_initial": surrealism_initial,
@@ -587,11 +988,20 @@ async def generate_chapter(
     chapter_number: int,
 ) -> dict[str, Any]:
     # Calculate expected chaos parameters for this chapter
-    expected_absurdity = story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
-    expected_surrealism = story.surrealism_initial + (chapter_number - 1) * story.surrealism_increment
-    expected_ridiculousness = story.ridiculousness_initial + (chapter_number - 1) * story.ridiculousness_increment
-    expected_insanity = story.insanity_initial + (chapter_number - 1) * story.insanity_increment
-    
+    expected_absurdity = (
+        story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
+    )
+    expected_surrealism = (
+        story.surrealism_initial + (chapter_number - 1) * story.surrealism_increment
+    )
+    expected_ridiculousness = (
+        story.ridiculousness_initial
+        + (chapter_number - 1) * story.ridiculousness_increment
+    )
+    expected_insanity = (
+        story.insanity_initial + (chapter_number - 1) * story.insanity_increment
+    )
+
     logger.info(
         "Chapter %d chaos parameters: absurdity=%.3f, surrealism=%.3f, ridiculousness=%.3f, insanity=%.3f",
         chapter_number,
@@ -600,7 +1010,7 @@ async def generate_chapter(
         expected_ridiculousness,
         expected_insanity,
     )
-    
+
     context = "\n\n".join(
         f"Chapter {chapter.chapter_number}: {chapter.content}"
         for chapter in recent_chapters
@@ -612,7 +1022,9 @@ async def generate_chapter(
         if len(story.style_authors) == 1:
             style_instruction = f"\nSTYLE GUIDE: Write in the style and sensibilities of {story.style_authors[0]}. Do not mention this author by name in the text.\n"
         else:
-            authors_list = ", ".join(story.style_authors[:-1]) + f", and {story.style_authors[-1]}"
+            authors_list = (
+                ", ".join(story.style_authors[:-1]) + f", and {story.style_authors[-1]}"
+            )
             style_instruction = f"\nSTYLE GUIDE: Blend the writing styles and sensibilities of {authors_list}. Do not mention these authors by name in the text.\n"
 
     # Add narrative perspective and tone guidance if available
@@ -647,7 +1059,7 @@ async def generate_chapter(
         "}\n\n"
         "Return the EXACT chaos parameter values provided above in your response."
     )
-    
+
     start = time.perf_counter()
     text, usage = await _call_openai(
         _settings.openai_model,
@@ -655,7 +1067,7 @@ async def generate_chapter(
         max_tokens=_settings.openai_max_tokens_chapter,
         temperature=_settings.openai_temperature_chapter,
     )
-    
+
     # Try to parse JSON response
     parsed = _safe_json_loads(text)
     chapter_content = text.strip()
@@ -663,7 +1075,7 @@ async def generate_chapter(
     actual_surrealism = expected_surrealism
     actual_ridiculousness = expected_ridiculousness
     actual_insanity = expected_insanity
-    
+
     if parsed and isinstance(parsed, dict):
         chapter_content = parsed.get("chapter_content", text.strip())
         actual_absurdity = parsed.get("absurdity", expected_absurdity)
@@ -672,23 +1084,23 @@ async def generate_chapter(
         actual_insanity = parsed.get("insanity", expected_insanity)
         logger.info(
             "✓ Chapter %d generated with chaos parameters from OpenAI response",
-            chapter_number
+            chapter_number,
         )
     else:
         logger.warning(
             "Failed to parse chapter JSON response, using text as-is and expected chaos values"
         )
-    
+
     chapter_content = _clean_chapter_content(chapter_content)
 
     if _needs_conclusion(chapter_content):
         chapter_content = await _complete_chapter(story, chapter_content)
-    
+
     elapsed = int((time.perf_counter() - start) * 1000)
     tokens_used: int | None = None
     if usage:
         tokens_used = usage.get("completion_tokens") or usage.get("total_tokens")
-    
+
     return {
         "chapter_number": chapter_number,
         "content": chapter_content.strip(),
@@ -766,7 +1178,9 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
             )
             return data_url
 
-        logger.warning("✗ No image URL or base64 data returned for story: %s", story_title)
+        logger.warning(
+            "✗ No image URL or base64 data returned for story: %s", story_title
+        )
         return ""
 
     except OpenAIError as exc:

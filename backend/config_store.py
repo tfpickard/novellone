@@ -25,6 +25,9 @@ class RuntimeConfig:
     openai_temperature_chapter: float
     openai_temperature_premise: float
     openai_temperature_eval: float
+    premise_prompt_refresh_interval: int
+    premise_prompt_stats_window: int
+    premise_prompt_variation_strength: float
 
     def as_dict(self) -> dict[str, int | float | str]:
         return {
@@ -41,6 +44,9 @@ class RuntimeConfig:
             "openai_temperature_chapter": self.openai_temperature_chapter,
             "openai_temperature_premise": self.openai_temperature_premise,
             "openai_temperature_eval": self.openai_temperature_eval,
+            "premise_prompt_refresh_interval": self.premise_prompt_refresh_interval,
+            "premise_prompt_stats_window": self.premise_prompt_stats_window,
+            "premise_prompt_variation_strength": self.premise_prompt_variation_strength,
         }
 
 
@@ -60,6 +66,9 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "openai_temperature_chapter": {"type": float, "min": 0.0, "max": 2.0},
     "openai_temperature_premise": {"type": float, "min": 0.0, "max": 2.0},
     "openai_temperature_eval": {"type": float, "min": 0.0, "max": 2.0},
+    "premise_prompt_refresh_interval": {"type": int, "min": 1, "max": 200},
+    "premise_prompt_stats_window": {"type": int, "min": 1, "max": 200},
+    "premise_prompt_variation_strength": {"type": float, "min": 0.0, "max": 1.0},
 }
 
 _DEFAULTS: dict[str, int | float | str] = {

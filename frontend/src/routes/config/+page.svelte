@@ -17,7 +17,10 @@
     | 'context_window_chapters'
     | 'openai_temperature_chapter'
     | 'openai_temperature_premise'
-    | 'openai_temperature_eval';
+    | 'openai_temperature_eval'
+    | 'premise_prompt_refresh_interval'
+    | 'premise_prompt_stats_window'
+    | 'premise_prompt_variation_strength';
 
   type StringConfigKey = 'openai_model' | 'openai_premise_model' | 'openai_eval_model';
 
@@ -65,7 +68,10 @@
     openai_eval_model: 'gpt-4o-mini',
     openai_temperature_chapter: 1.0,
     openai_temperature_premise: 1.0,
-    openai_temperature_eval: 0.3
+    openai_temperature_eval: 0.3,
+    premise_prompt_refresh_interval: 6,
+    premise_prompt_stats_window: 12,
+    premise_prompt_variation_strength: 0.65
   };
 
   let config: ConfigValues = { ...initialConfig };
@@ -102,7 +108,40 @@
       type: 'float',
       min: 0,
       max: 1,
-      step: 0.05
+      step: 0.01
+    },
+    {
+      key: 'premise_prompt_refresh_interval',
+      label: 'Premise Prompt Refresh Interval',
+      description: 'How many new stories to spawn before asking the model to remix the premise instructions.',
+      hint: 'Lower numbers keep the prompt volatile; higher numbers stabilize it.',
+      kind: 'number',
+      type: 'int',
+      min: 1,
+      max: 200,
+      step: 1
+    },
+    {
+      key: 'premise_prompt_stats_window',
+      label: 'Premise Stats Window',
+      description: 'Number of recent stories considered when summarising performance for prompt remixing.',
+      hint: 'Larger windows smooth out noise; smaller ones react quickly to new patterns.',
+      kind: 'number',
+      type: 'int',
+      min: 1,
+      max: 200,
+      step: 1
+    },
+    {
+      key: 'premise_prompt_variation_strength',
+      label: 'Premise Variation Strength',
+      description: 'Scales how aggressively the remix model pushes for weirdness and novelty in new premises.',
+      hint: 'Values near 1 lean into high-risk, high-variance instructions.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 1,
+      step: 0.01
     },
     {
       key: 'max_chapters_per_story',
