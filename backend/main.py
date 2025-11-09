@@ -27,7 +27,7 @@ from config import get_settings
 from config_store import apply_config_updates, get_runtime_config
 from logging_config import configure_logging
 from database import get_session
-from models import Chapter, Story, StoryEvaluation, SystemConfig
+from models import Chapter, CohesionMetric, Story, StoryEvaluation, SystemConfig, UniverseElement, UniversePrompt
 from story_generator import generate_cover_image, spawn_new_story
 from text_stats import calculate_text_stats, calculate_aggregate_stats
 from websocket_manager import ws_manager
@@ -139,6 +139,7 @@ class StorySummary(BaseModel):
     total_tokens: int | None
     theme_json: dict[str, Any] | None
     cover_image_url: str | None
+    universe_prompt_id: uuid.UUID | None = None
     absurdity_initial: float = 0.1
     surrealism_initial: float = 0.1
     ridiculousness_initial: float = 0.1
@@ -168,6 +169,7 @@ class StorySummary(BaseModel):
             total_tokens=story.total_tokens,
             theme_json=story.theme_json,
             cover_image_url=story.cover_image_url,
+            universe_prompt_id=story.universe_prompt_id,
             absurdity_initial=story.absurdity_initial,
             surrealism_initial=story.surrealism_initial,
             ridiculousness_initial=story.ridiculousness_initial,
@@ -199,10 +201,145 @@ class StoryCreate(BaseModel):
     title: str
     premise: str
     theme_json: dict[str, Any] | None = Field(default=None)
+    universe_prompt_id: uuid.UUID | None = Field(default=None)
 
 
 class StoryKillRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
+
+
+class UniverseElementRead(BaseModel):
+    id: uuid.UUID
+    universe_prompt_id: uuid.UUID
+    source_story_id: uuid.UUID
+    element_type: str
+    name: str
+    description: str | None
+    metadata: dict[str, Any] | None
+    extracted_at: datetime
+
+    @classmethod
+    def from_model(cls, element: UniverseElement) -> "UniverseElementRead":
+        return cls(
+            id=element.id,
+            universe_prompt_id=element.universe_prompt_id,
+            source_story_id=element.source_story_id,
+            element_type=element.element_type,
+            name=element.name,
+            description=element.description,
+            metadata=element.metadata,
+            extracted_at=element.extracted_at,
+        )
+
+
+class CohesionMetricRead(BaseModel):
+    id: uuid.UUID
+    story_id: uuid.UUID
+    universe_prompt_id: uuid.UUID | None
+    character_recurrence_score: float
+    thematic_overlap_score: float
+    timeline_continuity_score: float
+    overall_cohesion_score: float
+    details: dict[str, Any] | None
+    calculated_at: datetime
+
+    @classmethod
+    def from_model(cls, metric: CohesionMetric) -> "CohesionMetricRead":
+        return cls(
+            id=metric.id,
+            story_id=metric.story_id,
+            universe_prompt_id=metric.universe_prompt_id,
+            character_recurrence_score=metric.character_recurrence_score,
+            thematic_overlap_score=metric.thematic_overlap_score,
+            timeline_continuity_score=metric.timeline_continuity_score,
+            overall_cohesion_score=metric.overall_cohesion_score,
+            details=metric.details,
+            calculated_at=metric.calculated_at,
+        )
+
+
+class UniversePromptSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str | None
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    character_weight: float = 0.5
+    setting_weight: float = 0.5
+    theme_weight: float = 0.5
+    lore_weight: float = 0.5
+    element_count: int = 0
+
+    @classmethod
+    def from_model(cls, prompt: UniversePrompt) -> "UniversePromptSummary":
+        return cls(
+            id=prompt.id,
+            name=prompt.name,
+            description=prompt.description,
+            version=prompt.version,
+            created_at=prompt.created_at,
+            updated_at=prompt.updated_at,
+            character_weight=prompt.character_weight,
+            setting_weight=prompt.setting_weight,
+            theme_weight=prompt.theme_weight,
+            lore_weight=prompt.lore_weight,
+            element_count=len(prompt.elements) if prompt.elements else 0,
+        )
+
+
+class UniversePromptDetail(UniversePromptSummary):
+    characters: dict[str, Any] | None
+    settings: dict[str, Any] | None
+    themes: dict[str, Any] | None
+    lore: dict[str, Any] | None
+    narrative_constraints: list[str] | None
+    elements: list[UniverseElementRead]
+
+    @classmethod
+    def from_model(cls, prompt: UniversePrompt) -> "UniversePromptDetail":
+        return cls(
+            **UniversePromptSummary.from_model(prompt).model_dump(),
+            characters=prompt.characters,
+            settings=prompt.settings,
+            themes=prompt.themes,
+            lore=prompt.lore,
+            narrative_constraints=prompt.narrative_constraints,
+            elements=[UniverseElementRead.from_model(e) for e in prompt.elements],
+        )
+
+
+class UniversePromptCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = None
+    characters: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
+    themes: dict[str, Any] | None = None
+    lore: dict[str, Any] | None = None
+    narrative_constraints: list[str] | None = None
+    character_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    setting_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    theme_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    lore_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class UniversePromptUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    characters: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
+    themes: dict[str, Any] | None = None
+    lore: dict[str, Any] | None = None
+    narrative_constraints: list[str] | None = None
+    character_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    setting_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    theme_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    lore_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class UniverseExtractionRequest(BaseModel):
+    universe_prompt_id: uuid.UUID
+    story_ids: list[uuid.UUID] = Field(..., min_length=1)
 
 
 @app.on_event("startup")
@@ -390,6 +527,7 @@ async def create_story(payload: StoryCreate, session: SessionDep) -> dict[str, A
         title=payload.title,
         premise=payload.premise,
         theme_json=payload.theme_json,
+        universe_prompt_id=payload.universe_prompt_id,
         status="active",
     )
     session.add(story)
@@ -495,6 +633,198 @@ async def stories_ws(websocket: WebSocket) -> None:
     except Exception:  # noqa: BLE001
         await ws_manager.disconnect(websocket)
         logger.exception("WebSocket error")
+
+
+# Universe Prompt Endpoints
+
+@app.get("/api/universe-prompts")
+async def list_universe_prompts(
+    session: SessionDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> dict[str, Any]:
+    """List all universe prompts with pagination."""
+    stmt = select(UniversePrompt).order_by(UniversePrompt.created_at.desc())
+    count_stmt = select(func.count()).select_from(UniversePrompt)
+
+    total = (await session.execute(count_stmt)).scalar_one()
+    prompts = (
+        (await session.execute(
+            stmt.options(selectinload(UniversePrompt.elements))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ))
+        .scalars()
+        .all()
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [UniversePromptSummary.from_model(p).model_dump() for p in prompts],
+    }
+
+
+@app.get("/api/universe-prompts/{prompt_id}")
+async def get_universe_prompt(prompt_id: uuid.UUID, session: SessionDep) -> dict[str, Any]:
+    """Get detailed information about a specific universe prompt."""
+    stmt = (
+        select(UniversePrompt)
+        .where(UniversePrompt.id == prompt_id)
+        .options(selectinload(UniversePrompt.elements))
+    )
+    result = await session.execute(stmt)
+    prompt = result.scalars().first()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Universe prompt not found")
+    return UniversePromptDetail.from_model(prompt).model_dump()
+
+
+@app.post("/api/universe-prompts", status_code=201)
+async def create_universe_prompt(
+    payload: UniversePromptCreate,
+    session: SessionDep,
+) -> dict[str, Any]:
+    """Create a new universe prompt."""
+    prompt = UniversePrompt(
+        name=payload.name,
+        description=payload.description,
+        characters=payload.characters,
+        settings=payload.settings,
+        themes=payload.themes,
+        lore=payload.lore,
+        narrative_constraints=payload.narrative_constraints,
+        character_weight=payload.character_weight,
+        setting_weight=payload.setting_weight,
+        theme_weight=payload.theme_weight,
+        lore_weight=payload.lore_weight,
+    )
+    session.add(prompt)
+    await session.flush()
+
+    stmt = (
+        select(UniversePrompt)
+        .where(UniversePrompt.id == prompt.id)
+        .options(selectinload(UniversePrompt.elements))
+    )
+    prompt_obj = (await session.execute(stmt)).scalars().first()
+    if not prompt_obj:
+        raise HTTPException(status_code=500, detail="Failed to create universe prompt")
+
+    await session.commit()
+    logger.info("Created universe prompt: %s", prompt.name)
+    return UniversePromptDetail.from_model(prompt_obj).model_dump()
+
+
+@app.patch("/api/universe-prompts/{prompt_id}")
+async def update_universe_prompt(
+    prompt_id: uuid.UUID,
+    payload: UniversePromptUpdate,
+    session: SessionDep,
+) -> dict[str, Any]:
+    """Update an existing universe prompt."""
+    stmt = select(UniversePrompt).where(UniversePrompt.id == prompt_id)
+    prompt = (await session.execute(stmt)).scalar_one_or_none()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Universe prompt not found")
+
+    # Update fields that were provided
+    update_data = payload.model_dump(exclude_none=True)
+    for field, value in update_data.items():
+        setattr(prompt, field, value)
+
+    # Increment version on update
+    prompt.version += 1
+    prompt.updated_at = datetime.utcnow()
+
+    await session.flush()
+
+    stmt = (
+        select(UniversePrompt)
+        .where(UniversePrompt.id == prompt_id)
+        .options(selectinload(UniversePrompt.elements))
+    )
+    prompt_obj = (await session.execute(stmt)).scalars().first()
+    if not prompt_obj:
+        raise HTTPException(status_code=500, detail="Failed to update universe prompt")
+
+    await session.commit()
+    logger.info("Updated universe prompt: %s (version %d)", prompt.name, prompt.version)
+    return UniversePromptDetail.from_model(prompt_obj).model_dump()
+
+
+@app.delete("/api/universe-prompts/{prompt_id}")
+async def delete_universe_prompt(prompt_id: uuid.UUID, session: SessionDep) -> dict[str, Any]:
+    """Delete a universe prompt and all its elements."""
+    stmt = select(UniversePrompt).where(UniversePrompt.id == prompt_id)
+    prompt = (await session.execute(stmt)).scalar_one_or_none()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Universe prompt not found")
+
+    name = prompt.name
+    session.delete(prompt)
+    await session.commit()
+
+    logger.info("Deleted universe prompt: %s", name)
+    return {"message": f"Universe prompt '{name}' deleted successfully", "deleted": True}
+
+
+@app.post("/api/universe-prompts/{prompt_id}/extract", status_code=202)
+async def extract_universe_elements(
+    prompt_id: uuid.UUID,
+    payload: UniverseExtractionRequest,
+    session: SessionDep,
+) -> dict[str, Any]:
+    """Extract universe elements from selected stories (async job)."""
+    # Verify universe prompt exists
+    stmt = select(UniversePrompt).where(UniversePrompt.id == prompt_id)
+    prompt = (await session.execute(stmt)).scalar_one_or_none()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Universe prompt not found")
+
+    # Verify all story IDs exist
+    for story_id in payload.story_ids:
+        story_stmt = select(Story).where(Story.id == story_id)
+        story = (await session.execute(story_stmt)).scalar_one_or_none()
+        if not story:
+            raise HTTPException(status_code=404, detail=f"Story {story_id} not found")
+
+    # Import here to avoid circular dependency
+    from universe_extractor import extract_universe_from_stories
+
+    # Trigger extraction (this will be async in the background worker)
+    await extract_universe_from_stories(session, prompt_id, payload.story_ids)
+    await session.commit()
+
+    logger.info("Started universe extraction for prompt %s from %d stories", prompt.name, len(payload.story_ids))
+    return {
+        "message": "Universe extraction started",
+        "universe_prompt_id": str(prompt_id),
+        "story_count": len(payload.story_ids),
+    }
+
+
+@app.get("/api/cohesion-metrics")
+async def list_cohesion_metrics(
+    session: SessionDep,
+    story_id: uuid.UUID | None = Query(default=None),
+    universe_prompt_id: uuid.UUID | None = Query(default=None),
+) -> dict[str, Any]:
+    """List cohesion metrics, optionally filtered by story or universe prompt."""
+    stmt = select(CohesionMetric).order_by(CohesionMetric.calculated_at.desc())
+
+    if story_id:
+        stmt = stmt.where(CohesionMetric.story_id == story_id)
+    if universe_prompt_id:
+        stmt = stmt.where(CohesionMetric.universe_prompt_id == universe_prompt_id)
+
+    metrics = (await session.execute(stmt)).scalars().all()
+
+    return {
+        "items": [CohesionMetricRead.from_model(m).model_dump() for m in metrics],
+        "count": len(metrics),
+    }
 
 
 @app.post("/api/admin/spawn", status_code=201)

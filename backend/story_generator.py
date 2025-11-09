@@ -8,7 +8,7 @@ from typing import Any, Sequence
 from openai import AsyncOpenAI, OpenAIError
 
 from config import get_settings
-from models import Chapter, Story
+from models import Chapter, Story, UniversePrompt
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +17,27 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 
 async def _call_openai(
-    model: str, prompt: str, *, max_tokens: int, temperature: float
-) -> tuple[str, dict[str, int] | None]:
-    """Call OpenAI API using Chat Completions endpoint."""
+    prompt: str,
+    *,
+    model: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    response_format: str | None = None,
+) -> str:
+    """
+    Call OpenAI API using Chat Completions endpoint.
+
+    Returns just the content string for simpler usage.
+    For backward compatibility, when called with positional args (model, prompt),
+    returns tuple (str, dict | None).
+    """
+    # Use defaults from settings if not provided
+    if model is None:
+        model = _settings.openai_model
+    if max_tokens is None:
+        max_tokens = _settings.openai_max_tokens_chapter
+    if temperature is None:
+        temperature = _settings.openai_temperature_chapter
     try:
         # Check if this is a reasoning model (o1, gpt-5-mini, etc.)
         # Reasoning models need much higher token limits because they use tokens for internal reasoning
@@ -67,6 +85,10 @@ async def _call_openai(
         # GPT-5 and o1 models don't support temperature parameter
         if not is_gpt5_model and not is_reasoning_model:
             request_params["temperature"] = temperature
+
+        # Add response format if specified (for JSON mode)
+        if response_format == "json":
+            request_params["response_format"] = {"type": "json_object"}
 
         response = await _client.chat.completions.create(**request_params)
     except OpenAIError as exc:
@@ -150,7 +172,8 @@ async def _call_openai(
         )
         raise RuntimeError("OpenAI response message was empty")
 
-    return content_str, usage
+    # Return just the content string
+    return content_str
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -273,9 +296,9 @@ async def generate_story_premise() -> dict[str, Any]:
     max_retries = 2
     for attempt in range(max_retries):
         try:
-            text, _ = await _call_openai(
-                _settings.openai_premise_model,
+            text = await _call_openai(
                 prompt,
+                model=_settings.openai_premise_model,
                 max_tokens=_settings.openai_max_tokens_premise,
                 temperature=_settings.openai_temperature_premise,
             )
@@ -426,9 +449,9 @@ async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
         "border_radius, shadow_style, animation_speed}.\n"
         "Make colors harmonious and readable. Choose fonts that match aesthetic."
     )
-    text, _ = await _call_openai(
-        _settings.openai_premise_model,
+    text = await _call_openai(
         prompt,
+        model=_settings.openai_premise_model,
         max_tokens=_settings.openai_max_tokens_premise,
         temperature=_settings.openai_temperature_premise,
     )
@@ -522,9 +545,9 @@ async def _complete_chapter(story: Story, draft: str) -> str:
         "Write only the new concluding text."
     )
     max_tokens = max(256, int(_settings.openai_max_tokens_chapter * 0.35))
-    addition, _ = await _call_openai(
-        _settings.openai_model,
+    addition = await _call_openai(
         completion_prompt,
+        model=_settings.openai_model,
         max_tokens=max_tokens,
         temperature=_settings.openai_temperature_chapter,
     )
@@ -537,6 +560,7 @@ async def generate_chapter(
     recent_chapters: Sequence[Chapter],
     *,
     chapter_number: int,
+    universe_prompt_text: str | None = None,
 ) -> dict[str, Any]:
     # Calculate expected chaos parameters for this chapter
     expected_absurdity = story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
@@ -557,11 +581,17 @@ async def generate_chapter(
         f"Chapter {chapter.chapter_number}: {chapter.content}"
         for chapter in recent_chapters
     )
-    
+
+    # Build the prompt with optional universe context
+    universe_section = ""
+    if universe_prompt_text:
+        universe_section = f"\n\n{universe_prompt_text}\n\nUse the universe context above to inform your storytelling, incorporating relevant characters, settings, themes, and lore as appropriate.\n"
+
     prompt = (
         f"Story: {story.title}\n"
         f"Premise: {story.premise}\n"
-        f"Previous chapters: {context or 'None yet.'}\n\n"
+        f"Previous chapters: {context or 'None yet.'}\n"
+        f"{universe_section}\n"
         f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
         "Aim for 600-900 words and ensure the chapter forms a coherent arc with a beginning, middle, and end."
         " Do not end mid-sentence; conclude with a strong beat or hook.\n\n"
@@ -583,12 +613,16 @@ async def generate_chapter(
     )
     
     start = time.perf_counter()
-    text, usage = await _call_openai(
-        _settings.openai_model,
+    text = await _call_openai(
         prompt,
+        model=_settings.openai_model,
         max_tokens=_settings.openai_max_tokens_chapter,
         temperature=_settings.openai_temperature_chapter,
     )
+
+    # Note: We no longer get usage data from the simplified _call_openai
+    # This is a tradeoff for cleaner API
+    usage = None
     
     # Try to parse JSON response
     parsed = _safe_json_loads(text)
