@@ -54,12 +54,14 @@ services:
         ORIGIN: https://hurl.lol
     container_name: novellone_frontend
     restart: unless-stopped
+    env_file: .env.production
     environment:
       # Runtime environment for SvelteKit
       ORIGIN: https://hurl.lol
       # Tell SvelteKit we're behind a proxy with HTTPS
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
+      # SESSION_SECRET loaded from .env.production via env_file
     depends_on:
       - backend
     ports:
