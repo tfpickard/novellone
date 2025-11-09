@@ -10,11 +10,6 @@
 
   let selectedView: 'all' | 'active' | 'completed' | 'featured' = 'all';
   let sortMode: 'latest' | 'oldest' | 'chapters' = 'latest';
-  let spawning = false;
-  let spawnError: string | null = null;
-  let resetting = false;
-  let resetError: string | null = null;
-
   const coerceTheme = (value: unknown): StoryTheme | undefined =>
     (value ?? undefined) as StoryTheme | undefined;
 
@@ -84,13 +79,6 @@
 
   $: displayStories = [...filteredStories].sort(sortComparator);
 
-  async function handleSpawnStory() {
-    await goto('/config');
-  }
-
-  async function handleResetSystem() {
-    await goto('/config');
-  }
 </script>
 
 <div class="page-container">
@@ -100,14 +88,6 @@
       <p>Autonomous science fiction tales evolving in real time.</p>
     </div>
     <div class="hero-right">
-      <div class="actions">
-        <a class="spawn-button" href="/config">
-          + Generate New Story
-        </a>
-        <a class="reset-button" href="/config">
-          Reset System
-        </a>
-      </div>
       <div class="stats">
         <div>
           <span>Active</span>
@@ -252,76 +232,6 @@
     flex-direction: column;
     gap: 1rem;
     align-items: flex-end;
-  }
-
-  .spawn-button {
-    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
-    color: #fff;
-    border: none;
-    border-radius: 999px;
-    padding: 0.75rem 1.5rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .spawn-button:hover:enabled {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(56, 189, 248, 0.5);
-  }
-
-  .spawn-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .reset-button {
-    background: rgba(220, 38, 38, 0.2);
-    color: #fca5a5;
-    border: 1px solid rgba(252, 165, 165, 0.6);
-    border-radius: 999px;
-    padding: 0.75rem 1.5rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .reset-button:hover:enabled {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(248, 113, 113, 0.3);
-  }
-
-  .reset-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .actions {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-  }
-
-  .error-text {
-    color: #fca5a5;
-    font-size: 0.85rem;
-    margin: 0;
-    text-align: right;
   }
 
   .hero h1 {
