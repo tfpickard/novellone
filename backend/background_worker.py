@@ -187,9 +187,10 @@ class BackgroundWorker:
         chapters_stmt = select(Chapter).where(Chapter.story_id == story.id).order_by(Chapter.chapter_number)
         chapters = list((await session.execute(chapters_stmt)).scalars())
         logger.debug(
-            "Evaluating story %s with %d chapters", story.id, len(chapters)
+            "Evaluating story %s with %d chapters (quality threshold: %.2f)",
+            story.id, len(chapters), config.quality_score_min
         )
-        result = await evaluate_story(story, chapters)
+        result = await evaluate_story(story, chapters, quality_threshold=config.quality_score_min)
         evaluation = StoryEvaluation(
             story_id=story.id,
             chapter_number=story.chapter_count,

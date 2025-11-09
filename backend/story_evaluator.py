@@ -13,32 +13,42 @@ _settings = get_settings()
 _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 
-async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str, Any]:
+async def evaluate_story(story: Story, chapters: Sequence[Chapter], quality_threshold: float = 0.5) -> dict[str, Any]:
+    """
+    Evaluate a story's quality and determine if it should continue.
+
+    Args:
+        story: The story being evaluated
+        chapters: All chapters of the story
+        quality_threshold: Minimum overall score (0.0-1.0) required to continue (default: 0.5)
+    """
     chapter_summaries = "\n\n".join(
         f"Chapter {c.chapter_number}: {c.content[:4000]}"
         for c in chapters[-_settings.context_window_chapters :]
     )
+
+    # Convert threshold from 0-1 scale to 0-10 scale for the prompt
+    threshold_0_10 = quality_threshold * 10.0
+
     prompt = (
         f"Story: {story.title}\nPremise: {story.premise}\n"
         f"Current chapter count: {story.chapter_count}\n"
         f"Recent chapters:\n{chapter_summaries}\n\n"
-        "Evaluate this story's quality and viability with STRICT criteria.\n\n"
+        "Evaluate this story's quality and viability.\n\n"
         "Score 0-10 on each dimension:\n"
-        "- coherence: Is the plot logical and consistent? (Be strict: 0-3=incoherent, 4-6=some issues, 7-8=good, 9-10=excellent)\n"
-        "- novelty: Is the story fresh and interesting? (Be strict: 0-3=derivative, 4-6=somewhat interesting, 7-8=creative, 9-10=highly original)\n"
-        "- engagement: Would readers want to continue? (Be strict: 0-3=boring, 4-6=mildly interesting, 7-8=engaging, 9-10=captivating)\n"
-        "- pacing: Does the story progress well? (Be strict: 0-3=stalled, 4-6=uneven, 7-8=good flow, 9-10=perfect pace)\n\n"
-        "IMPORTANT: Be HARSH in your evaluation. Most stories should NOT continue.\n"
-        "Set should_continue to FALSE if ANY of these apply:\n"
-        "- Story is repetitive or going in circles\n"
-        "- Quality has degraded from earlier chapters\n"
-        "- Plot feels exhausted or forced\n"
-        "- Story has lost its original premise or direction\n"
-        "- Characters are acting inconsistently without good reason\n"
-        "- Pacing has stalled or become meandering\n"
-        "- Any score is below 5.0\n"
-        "- Overall quality is merely 'okay' rather than 'good' or 'excellent'\n"
-        "- Story has exceeded 10 chapters without significant plot development\n\n"
+        "- coherence: Is the plot logical and consistent? (0-3=incoherent, 4-6=some issues, 7-8=good, 9-10=excellent)\n"
+        "- novelty: Is the story fresh and interesting? (0-3=derivative, 4-6=somewhat interesting, 7-8=creative, 9-10=highly original)\n"
+        "- engagement: Would readers want to continue? (0-3=boring, 4-6=mildly interesting, 7-8=engaging, 9-10=captivating)\n"
+        "- pacing: Does the story progress well? (0-3=stalled, 4-6=uneven, 7-8=good flow, 9-10=perfect pace)\n\n"
+        f"Quality threshold: {threshold_0_10:.1f}/10 (overall weighted score)\n\n"
+        "Set should_continue to FALSE if ANY of these critical issues apply:\n"
+        "- Story is severely repetitive or going in circles\n"
+        "- Plot has completely stalled or become incoherent\n"
+        "- Story has completely lost its original premise or direction\n"
+        "- Major continuity errors or severe logical inconsistencies\n"
+        "- The story is fundamentally broken and cannot be salvaged\n\n"
+        "Set should_continue to TRUE if the story is still viable and meeting the quality threshold.\n"
+        "Minor issues, uneven pacing, or moderate quality are acceptable if above the threshold.\n\n"
         "Return ONLY valid JSON in this exact structure:\n"
         "{\n"
         '  "coherence_score": <0-10>,\n'
@@ -48,8 +58,7 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
         '  "should_continue": <true/false>,\n'
         '  "reasoning": "Brief explanation of your decision",\n'
         '  "issues": ["issue1", "issue2"]\n'
-        "}\n\n"
-        "Remember: Most stories should be terminated. Only truly exceptional stories should continue."
+        "}"
     )
 
     def _neutral_payload(reason: str) -> dict[str, Any]:
