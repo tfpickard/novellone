@@ -1,0 +1,44 @@
+# Systemd service for Eternal Stories (Novellone)
+# Install this file to /etc/systemd/system/novellone.service
+#
+# Installation:
+#   sudo cp systemd/novellone.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable novellone
+#   sudo systemctl start novellone
+
+[Unit]
+Description=Eternal Stories - Autonomous AI Storytelling Platform
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/novellone
+User=novellone
+Group=novellone
+
+# Start command
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d
+
+# Stop command
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+
+# Reload command (for updates)
+ExecReload=/usr/bin/docker compose -f docker-compose.prod.yml up -d --force-recreate
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Security settings
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/novellone/logs
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+
