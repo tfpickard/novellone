@@ -229,12 +229,12 @@ async def generate_story_premise() -> dict[str, Any]:
     surrealism_initial = random.uniform(0.05, 0.25)
     ridiculousness_initial = random.uniform(0.05, 0.25)
     insanity_initial = random.uniform(0.05, 0.25)
-    
+
     absurdity_increment = random.uniform(0.02, 0.15)
     surrealism_increment = random.uniform(0.02, 0.15)
     ridiculousness_increment = random.uniform(0.02, 0.15)
     insanity_increment = random.uniform(0.02, 0.15)
-    
+
     logger.info(
         "Generated chaos parameters: absurdity=%.3f+%.3f, surrealism=%.3f+%.3f, ridiculousness=%.3f+%.3f, insanity=%.3f+%.3f",
         absurdity_initial, absurdity_increment,
@@ -242,7 +242,32 @@ async def generate_story_premise() -> dict[str, Any]:
         ridiculousness_initial, ridiculousness_increment,
         insanity_initial, insanity_increment,
     )
-    
+
+    # List of famous 20th century authors with distinctive styles
+    famous_authors = [
+        "Franz Kafka", "Jorge Luis Borges", "Italo Calvino", "Gabriel García Márquez",
+        "Kurt Vonnegut", "Philip K. Dick", "Ursula K. Le Guin", "Stanisław Lem",
+        "Samuel Beckett", "Virginia Woolf", "James Joyce", "William S. Burroughs",
+        "Haruki Murakami", "Octavia Butler", "Ray Bradbury", "Isaac Asimov",
+        "J.G. Ballard", "William Gibson", "Margaret Atwood", "Aldous Huxley",
+        "George Orwell", "Arthur C. Clarke", "Doris Lessing", "Thomas Pynchon",
+        "Don DeLillo", "Chinua Achebe", "Toni Morrison", "Gabriel García Márquez",
+        "Salman Rushdie", "Milan Kundera", "Cormac McCarthy", "Vladimir Nabokov"
+    ]
+
+    # Randomly select 1-3 authors
+    num_authors = random.randint(1, 3)
+    selected_authors = random.sample(famous_authors, num_authors)
+
+    logger.info("Selected style authors: %s", selected_authors)
+
+    # Build style instruction
+    if len(selected_authors) == 1:
+        style_instruction = f"- Adopt the writing style and sensibilities of {selected_authors[0]}"
+    else:
+        authors_list = ", ".join(selected_authors[:-1]) + f", and {selected_authors[-1]}"
+        style_instruction = f"- Blend the writing styles and sensibilities of {authors_list}"
+
     # More explicit prompt with stronger instructions
     prompt = (
         "Generate a unique, creative science fiction story premise.\n\n"
@@ -252,14 +277,20 @@ async def generate_story_premise() -> dict[str, Any]:
         "- Include a character named Tom who is an engineer (can be major or minor role)\n"
         "- Each story must be completely unique and different from any previous story\n"
         "- Each story must be somewhat absurd, ridiculous and surreal. Choose how much of each randomly.\n"
-        "- Write a detailed, engaging premise (2-3 sentences minimum)\n\n"
+        "- Write a detailed, engaging premise (2-3 sentences minimum)\n"
+        f"{style_instruction}\n"
+        "- DO NOT mention these authors by name in the title or premise\n"
+        "- Let their influence guide the tone, perspective, themes, and narrative approach\n\n"
         "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
         "{\n"
         '  "title": "Your Unique Creative Title",\n'
         '  "premise": "A detailed, engaging premise that describes the story concept",\n'
         '  "themes": ["theme1", "theme2"],\n'
         '  "setting": "Brief setting description",\n'
-        '  "central_conflict": "The main conflict or problem"\n'
+        '  "central_conflict": "The main conflict or problem",\n'
+        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
+        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
+        '  "genre_tags": ["tag1", "tag2", "tag3"] // Additional genre/style descriptors like "existential", "noir", "absurdist", "dystopian", etc.\n'
         "}\n\n"
         "Example titles for inspiration (create something different):\n"
         "- Echoes of the Quantum Conductor\n"
@@ -316,6 +347,15 @@ async def generate_story_premise() -> dict[str, Any]:
                     parsed["surrealism_increment"] = surrealism_increment
                     parsed["ridiculousness_increment"] = ridiculousness_increment
                     parsed["insanity_increment"] = insanity_increment
+                    # Add style authors
+                    parsed["style_authors"] = selected_authors
+                    # Ensure metadata fields exist
+                    if "narrative_perspective" not in parsed:
+                        parsed["narrative_perspective"] = "third-person-limited"
+                    if "tone" not in parsed:
+                        parsed["tone"] = "mysterious"
+                    if "genre_tags" not in parsed:
+                        parsed["genre_tags"] = []
                     return parsed
                 else:
                     logger.warning(
@@ -379,6 +419,10 @@ async def generate_story_premise() -> dict[str, Any]:
                 "themes": [],
                 "setting": "Unknown",
                 "central_conflict": "Unclear",
+                "narrative_perspective": "third-person-limited",
+                "tone": "mysterious",
+                "genre_tags": [],
+                "style_authors": selected_authors,
                 "absurdity_initial": absurdity_initial,
                 "surrealism_initial": surrealism_initial,
                 "ridiculousness_initial": ridiculousness_initial,
@@ -406,6 +450,10 @@ async def generate_story_premise() -> dict[str, Any]:
         "themes": [],
         "setting": "Unknown",
         "central_conflict": "Unclear",
+        "narrative_perspective": "third-person-limited",
+        "tone": "mysterious",
+        "genre_tags": [],
+        "style_authors": selected_authors,
         "absurdity_initial": absurdity_initial,
         "surrealism_initial": surrealism_initial,
         "ridiculousness_initial": ridiculousness_initial,
@@ -557,11 +605,29 @@ async def generate_chapter(
         f"Chapter {chapter.chapter_number}: {chapter.content}"
         for chapter in recent_chapters
     )
-    
+
+    # Build style instruction if authors are specified
+    style_instruction = ""
+    if story.style_authors and len(story.style_authors) > 0:
+        if len(story.style_authors) == 1:
+            style_instruction = f"\nSTYLE GUIDE: Write in the style and sensibilities of {story.style_authors[0]}. Do not mention this author by name in the text.\n"
+        else:
+            authors_list = ", ".join(story.style_authors[:-1]) + f", and {story.style_authors[-1]}"
+            style_instruction = f"\nSTYLE GUIDE: Blend the writing styles and sensibilities of {authors_list}. Do not mention these authors by name in the text.\n"
+
+    # Add narrative perspective and tone guidance if available
+    metadata_guidance = ""
+    if story.narrative_perspective:
+        metadata_guidance += f"Narrative perspective: {story.narrative_perspective}\n"
+    if story.tone:
+        metadata_guidance += f"Tone: {story.tone}\n"
+
     prompt = (
         f"Story: {story.title}\n"
         f"Premise: {story.premise}\n"
-        f"Previous chapters: {context or 'None yet.'}\n\n"
+        f"Previous chapters: {context or 'None yet.'}\n"
+        f"{style_instruction}"
+        f"{metadata_guidance}\n"
         f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
         "Aim for 600-900 words and ensure the chapter forms a coherent arc with a beginning, middle, and end."
         " Do not end mid-sentence; conclude with a strong beat or hook.\n\n"

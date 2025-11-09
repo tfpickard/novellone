@@ -139,6 +139,11 @@ class StorySummary(BaseModel):
     total_tokens: int | None
     theme_json: dict[str, Any] | None
     cover_image_url: str | None
+    style_authors: list[str] | None = None
+    narrative_perspective: str | None = None
+    tone: str | None = None
+    genre_tags: list[str] | None = None
+    estimated_reading_time_minutes: int | None = None
     absurdity_initial: float = 0.1
     surrealism_initial: float = 0.1
     ridiculousness_initial: float = 0.1
@@ -152,11 +157,16 @@ class StorySummary(BaseModel):
     @classmethod
     def from_model(cls, story: Story, include_stats: bool = False) -> "StorySummary":
         aggregate_stats = None
+        estimated_reading_time = None
         if include_stats and story.chapters:
             # Calculate aggregate statistics from all chapters
             chapters_data = [{"content": c.content} for c in story.chapters]
             aggregate_stats = calculate_aggregate_stats(chapters_data)
-        
+            # Estimate reading time at ~250 words per minute
+            total_words = aggregate_stats.get("total_words", 0)
+            if total_words > 0:
+                estimated_reading_time = max(1, round(total_words / 250))
+
         return cls(
             id=story.id,
             title=story.title,
@@ -168,6 +178,11 @@ class StorySummary(BaseModel):
             total_tokens=story.total_tokens,
             theme_json=story.theme_json,
             cover_image_url=story.cover_image_url,
+            style_authors=story.style_authors,
+            narrative_perspective=story.narrative_perspective,
+            tone=story.tone,
+            genre_tags=story.genre_tags,
+            estimated_reading_time_minutes=estimated_reading_time,
             absurdity_initial=story.absurdity_initial,
             surrealism_initial=story.surrealism_initial,
             ridiculousness_initial=story.ridiculousness_initial,
@@ -554,6 +569,10 @@ async def admin_spawn_story(
         surrealism_increment=payload.get("surrealism_increment", 0.05),
         ridiculousness_increment=payload.get("ridiculousness_increment", 0.05),
         insanity_increment=payload.get("insanity_increment", 0.05),
+        style_authors=payload.get("style_authors"),
+        narrative_perspective=payload.get("narrative_perspective"),
+        tone=payload.get("tone"),
+        genre_tags=payload.get("genre_tags"),
     )
     session.add(story)
     await session.flush()

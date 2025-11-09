@@ -26,7 +26,14 @@ class Story(Base):
     theme_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_chapter_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    
+
+    # Style and metadata
+    style_authors: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)  # List of 1-3 author names
+    narrative_perspective: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g., "first-person", "third-person-omniscient"
+    tone: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g., "dark", "humorous", "philosophical"
+    genre_tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)  # Additional genre/style tags
+    estimated_reading_time_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Total estimated reading time
+
     # Chaos parameters - initial values set at story creation
     absurdity_initial: Mapped[float] = mapped_column(Float, default=0.1)
     surrealism_initial: Mapped[float] = mapped_column(Float, default=0.1)
