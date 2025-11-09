@@ -157,7 +157,21 @@
         <div class="badges">
           {#if theme?.aesthetic}<span class="badge">{theme.aesthetic}</span>{/if}
           {#if theme?.mood}<span class="badge">{theme.mood}</span>{/if}
+          {#if story.tone}<span class="badge badge-tone">{story.tone}</span>{/if}
+          {#if story.narrative_perspective}<span class="badge badge-perspective">{story.narrative_perspective}</span>{/if}
         </div>
+        {#if story.style_authors && story.style_authors.length > 0}
+          <div class="style-authors">
+            <strong>Stylistic Influences:</strong> {story.style_authors.join(', ')}
+          </div>
+        {/if}
+        {#if story.genre_tags && story.genre_tags.length > 0}
+          <div class="genre-tags">
+            {#each story.genre_tags as tag}
+              <span class="genre-tag">{tag}</span>
+            {/each}
+          </div>
+        {/if}
       </div>
     </div>
     <div class="side-panel">
@@ -174,6 +188,12 @@
           <span>Tokens</span>
           <strong>{story.total_tokens ?? 0}</strong>
         </div>
+        {#if story.estimated_reading_time_minutes}
+          <div>
+            <span>Reading Time</span>
+            <strong>{story.estimated_reading_time_minutes} min</strong>
+          </div>
+        {/if}
         {#if story.aggregate_stats}
           <div>
             <span>Total Words</span>
@@ -409,6 +429,48 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.75rem;
+  }
+
+  .badge-tone {
+    background: rgba(168, 85, 247, 0.25);
+    color: #e9d5ff;
+  }
+
+  .badge-perspective {
+    background: rgba(34, 197, 94, 0.25);
+    color: #bbf7d0;
+  }
+
+  .style-authors {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(15, 23, 42, 0.5);
+    border-left: 3px solid var(--accent-color, #38bdf8);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .style-authors strong {
+    color: var(--primary-color, #38bdf8);
+    margin-right: 0.5rem;
+  }
+
+  .genre-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .genre-tag {
+    background: rgba(249, 115, 22, 0.2);
+    color: #fed7aa;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    text-transform: lowercase;
+    border: 1px solid rgba(249, 115, 22, 0.3);
   }
 
   .meta {
