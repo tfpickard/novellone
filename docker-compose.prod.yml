@@ -51,9 +51,12 @@ services:
     environment:
       # SvelteKit origin for SSR
       ORIGIN: https://hurl.lol
-      # Optional: Frontend auto-detects same-origin API if not set
-      # VITE_PUBLIC_API_URL: https://hurl.lol
-      # VITE_PUBLIC_WS_URL: wss://hurl.lol/ws/stories
+      # Explicitly set HTTPS URLs to avoid mixed-content errors
+      VITE_PUBLIC_API_URL: https://hurl.lol
+      VITE_PUBLIC_WS_URL: wss://hurl.lol/ws/stories
+      # Tell SvelteKit we're behind a proxy with HTTPS
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
     depends_on:
       - backend
     ports:
