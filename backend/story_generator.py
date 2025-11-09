@@ -459,6 +459,43 @@ _TERMINATING_PUNCTUATION = {".", "!", "?", "…"}
 _CLOSING_PUNCTUATION = {"'", '"', "”", "’", "]", ")", "»"}
 
 
+def _clean_chapter_content(raw: str) -> str:
+    if not raw:
+        return raw
+
+    text = raw.strip()
+
+    # Handle JSON string payload (quoted)
+    if text.startswith('"') and text.endswith('"'):
+        try:
+            decoded = json.loads(text)
+            if isinstance(decoded, str):
+                text = decoded.strip()
+        except json.JSONDecodeError:
+            # If decoding fails, continue with the original text; not all inputs are valid JSON.
+            pass
+
+    # Handle nested JSON object containing chapter_content
+    if text.startswith("{") and text.endswith("}"):
+        nested = _safe_json_loads(text)
+        if nested and isinstance(nested, dict):
+            inner = nested.get("chapter_content")
+            if isinstance(inner, str):
+                return inner.strip()
+
+    # Remove trailing JSON-like metrics block if present
+    if '"absurdity"' in text and '"chapter_content"' not in text:
+        lines = text.splitlines()
+        cleaned_lines: list[str] = []
+        for line in lines:
+            if line.strip().startswith('"absurdity"'):
+                break
+            cleaned_lines.append(line)
+        text = "\n".join(cleaned_lines).strip()
+
+    return text
+
+
 def _needs_conclusion(text: str) -> bool:
     trimmed = text.rstrip()
     if not trimmed:
@@ -576,6 +613,8 @@ async def generate_chapter(
             "Failed to parse chapter JSON response, using text as-is and expected chaos values"
         )
     
+    chapter_content = _clean_chapter_content(chapter_content)
+
     if _needs_conclusion(chapter_content):
         chapter_content = await _complete_chapter(story, chapter_content)
     
@@ -610,7 +649,8 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
         f"Book cover art for a science fiction story titled '{story_title}'. "
         f"Story premise: {premise_summary}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
-        "Style: modern sci-fi book cover, professional, dramatic lighting, no text or words."
+        "Style: modern sci-fi book cover, professional, dramatic lighting. "
+        f"Render the title text '{story_title}' clearly within the artwork, integrating it into the scene with polished typography."
     )
 
     logger.info("Generating cover image for story: %s", story_title)

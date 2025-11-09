@@ -4,7 +4,14 @@
   import type { PageData } from './$types';
   import { applyStoryTheme, type StoryTheme } from '$lib/theme';
   import { createStorySocket, type StorySocketMessage } from '$lib/websocket';
-  import { killStory as killStoryRequest, deleteStory as deleteStoryRequest } from '$lib/api';
+  import {
+    killStory as killStoryRequest,
+    deleteStory as deleteStoryRequest,
+    generateChapter as generateChapterRequest
+  } from '$lib/api';
+  import StoryTimeline from '$lib/components/StoryTimeline.svelte';
+  import StoryDna from '$lib/components/StoryDna.svelte';
+  import { renderMarkdown } from '$lib/markdown';
 
   export let data: PageData;
 
@@ -15,8 +22,16 @@
   let killError: string | null = null;
   let deleting = false;
   let deleteError: string | null = null;
+  let generating = false;
+  let generateError: string | null = null;
+  const pendingChapterIds: Set<string> = new Set();
 
-  const theme = story.theme_json as StoryTheme;
+  let theme = story.theme_json as StoryTheme;
+  $: theme = story.theme_json as StoryTheme;
+  $: if (container && theme) {
+    applyStoryTheme(theme, container);
+  }
+  $: premiseHtml = renderMarkdown(story.premise);
 
   async function handleSocket(message: StorySocketMessage) {
     if (message.type === 'system_reset') {
@@ -25,6 +40,13 @@
     }
     if (message.story_id !== story.id) return;
     if (message.type === 'new_chapter') {
+      if (pendingChapterIds.has(message.chapter.id)) {
+        pendingChapterIds.delete(message.chapter.id);
+        return;
+      }
+      if (story.chapters.some((existing) => existing.id === message.chapter.id)) {
+        return;
+      }
       story = {
         ...story,
         chapters: [...story.chapters, message.chapter],
@@ -86,11 +108,32 @@
   }
 
   onMount(() => {
-    if (container && theme) {
-      applyStoryTheme(theme, container);
-    }
     socket = createStorySocket(handleSocket);
   });
+  async function handleGenerateChapter() {
+    if (generating || story.status !== 'active') return;
+    generating = true;
+    generateError = null;
+    try {
+      const updated = await generateChapterRequest(story.id);
+      story = updated;
+      pendingChapterIds.clear();
+      updated.chapters.forEach((chapter) => pendingChapterIds.add(chapter.id));
+      await tick();
+      const last = document.querySelector('.chapter:last-of-type');
+      last?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      console.error('Failed to generate chapter', error);
+      generateError = error instanceof Error ? error.message : 'Failed to generate chapter';
+    } finally {
+      generating = false;
+      Array.from(pendingChapterIds).forEach((id) => {
+        if (!story.chapters.some((chapter) => chapter.id === id)) {
+          pendingChapterIds.delete(id);
+        }
+      });
+    }
+  }
 
   onDestroy(() => {
     socket?.close();
@@ -108,7 +151,9 @@
       <div class="header-text">
         <span class="status" data-live={story.status === 'active'}>{story.status}</span>
         <h1>{story.title}</h1>
-        <p class="premise">{story.premise}</p>
+        <div class="premise">
+          {@html premiseHtml}
+        </div>
         <div class="badges">
           {#if theme?.aesthetic}<span class="badge">{theme.aesthetic}</span>{/if}
           {#if theme?.mood}<span class="badge">{theme.mood}</span>{/if}
@@ -163,6 +208,11 @@
         </div>
       </aside>
       {#if story.status === 'active'}
+        <button class="generate-button" on:click={handleGenerateChapter} disabled={generating}>
+          {generating ? 'Generating…' : 'Generate New Chapter'}
+        </button>
+      {/if}
+      {#if story.status === 'active'}
         <button class="kill-button" on:click={handleKill} disabled={killing}>
           {killing ? 'Ending…' : 'Kill Story'}
         </button>
@@ -176,6 +226,9 @@
       {#if deleteError}
         <p class="delete-error">{deleteError}</p>
       {/if}
+      {#if generateError}
+        <p class="generate-error">{generateError}</p>
+      {/if}
     </div>
   </header>
 
@@ -185,9 +238,14 @@
     </div>
   {/if}
 
+  <section class="analysis">
+    <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+    <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+  </section>
+
   <section class="chapters">
     {#each story.chapters as chapter (chapter.id)}
-      <article class="chapter">
+      <article class="chapter" id={`chapter-${chapter.chapter_number}`}>
         <div class="chapter-header">
           <div>
             <h2>Chapter {chapter.chapter_number}</h2>
@@ -214,7 +272,9 @@
             </div>
           {/if}
         </div>
-        <p>{chapter.content}</p>
+        <div class="chapter-body">
+          {@html renderMarkdown(chapter.content)}
+        </div>
       </article>
     {/each}
   </section>
@@ -279,7 +339,20 @@
     margin: 0;
     line-height: 1.7;
     opacity: 0.9;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .premise :global(p) {
+    margin: 0;
+  }
+
+  .premise :global(ul),
+  .premise :global(ol) {
+    padding-left: 1.25rem;
+    margin: 0;
   }
 
   .badges {
@@ -349,6 +422,32 @@
     cursor: not-allowed;
   }
 
+  .generate-button {
+    background: linear-gradient(135deg, #38bdf8, #6366f1);
+    color: #0f172a;
+    border: none;
+    border-radius: 999px;
+    padding: 0.65rem 1.6rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    font-weight: 700;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 12px 28px rgba(56, 189, 248, 0.35);
+  }
+
+  .generate-button:hover:enabled {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 36px rgba(56, 189, 248, 0.4);
+  }
+
+  .generate-button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
   .delete-button {
     background: #7f1d1d;
     color: #f8fafc;
@@ -385,6 +484,12 @@
     margin: 0;
   }
 
+  .generate-error {
+    color: #facc15;
+    font-size: 0.85rem;
+    margin: 0;
+  }
+
   .status {
     padding: 0.35rem 0.9rem;
     border-radius: 999px;
@@ -416,6 +521,13 @@
     max-height: 60vh;
     overflow-y: auto;
     padding-right: 1rem;
+  }
+
+  .analysis {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
   }
 
   .chapter {
@@ -519,9 +631,37 @@
     opacity: 0.6;
   }
 
-  .chapter p {
-    white-space: pre-line;
-    line-height: 1.6;
+  .chapter-body {
+    line-height: 1.65;
+    display: grid;
+    gap: 1rem;
+    font-size: 1rem;
+  }
+
+  .chapter-body :global(p) {
+    margin: 0;
+  }
+
+  .chapter-body :global(ul),
+  .chapter-body :global(ol) {
+    margin: 0;
+    padding-left: 1.25rem;
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .chapter-body :global(code) {
+    background: rgba(15, 23, 42, 0.6);
+    padding: 0.2rem 0.4rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+
+  .chapter-body :global(pre) {
+    background: rgba(15, 23, 42, 0.75);
+    border-radius: 12px;
+    padding: 1rem;
+    overflow: auto;
   }
 
   @media (max-width: 900px) {
