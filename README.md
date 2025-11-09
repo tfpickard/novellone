@@ -43,7 +43,8 @@ Eternal Stories is a containerized platform built to explore autonomous storytel
 - **Visual Theming** – Applies per-story CSS variables (colors, fonts, animations) sourced from AI-generated theme JSON.
 - **Story Intelligence Dashboards** – Interactive timeline + “DNA” radar views surface pacing, chaos vectors, and evaluation health for each narrative.
 - **Markdown-native Chapters** – Premises and chapters are authored in Markdown and rendered with sanitized HTML in the reader.
-- **Runtime Configuration** – Adjustable pacing, evaluation cadence, and context windows through a secure admin UI.
+- **Runtime Configuration** – Adjustable pacing, evaluation cadence, and context windows through a secure, password-protected admin UI.
+- **Secure Admin Console** – Cookie-based authentication with signed sessions guards destructive controls.
 - **Statistical Dashboards** – Aggregates story counts, chapter totals, token usage, average chaos levels, and recent activity.
 
 ---
@@ -112,6 +113,7 @@ Found under `frontend/`, implemented with SvelteKit:
   - `/` – Story index with featured cover gallery, status filters, smart sorting, and admin controls.
   - `/story/[id]` – Detailed live view with rendered Markdown chapters, story timeline, DNA radar, and evaluation metadata.
   - `/config` – Runtime configuration editor for administrators.
+  - `/login` – Session-based admin sign-in that unlocks protected controls.
   - `/stats` – Aggregate metrics, chapter feed, and chaos averages.
 - **Libraries**
   - `$lib/api` – Fetch abstraction for backend endpoints.
@@ -165,6 +167,14 @@ cd novellone
    | `WORKER_TICK_INTERVAL` | Seconds between APScheduler ticks |
    | `MIN_CHAPTERS_BEFORE_EVAL` | Chapters before first evaluation |
    | `ENABLE_WEBSOCKET` | Toggle broadcast events |
+   | `ADMIN_USERNAME` | Login handle for the protected admin console |
+   | `ADMIN_PASSWORD` | Cleartext password (automatically hashed on startup with bcrypt) |
+   | `SESSION_SECRET` | Random string used to sign and verify session cookies |
+   | `SESSION_TTL_SECONDS` | Session lifetime in seconds (defaults to one week) |
+   | `SESSION_COOKIE_NAME` | Optional override for the session cookie name |
+   | `SESSION_COOKIE_DOMAIN` | Optional cookie domain (leave blank for same-origin) |
+   | `SESSION_COOKIE_SECURE` | Set `true` when serving over HTTPS, otherwise `false` |
+   | `SESSION_COOKIE_SAMESITE` | `lax`, `strict`, or `none` depending on proxy setup |
 
 3. Optional overrides can be stored in `backend/config_store.py` via the `/api/config` endpoint.
 
@@ -205,6 +215,8 @@ npm run dev -- --host
 ```
 
 The frontend development server proxies API calls via `VITE_PUBLIC_API_URL` or falls back to `http://localhost:8000`.
+
+After both services are running, browse to `http://localhost:3000/login` to authenticate before opening the protected `/config` dashboard.
 
 ---
 

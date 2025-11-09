@@ -1,12 +1,14 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="allow", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="allow", env_file_encoding="utf-8"
+    )
 
     database_url: str = Field(..., alias="DATABASE_URL")
 
@@ -46,6 +48,52 @@ class AppSettings(BaseSettings):
     enable_websocket: bool = Field(True, alias="ENABLE_WEBSOCKET")
 
     public_api_url: Annotated[str | None, Field(default=None, alias="PUBLIC_API_URL")]
+
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="stupishly", alias="ADMIN_PASSWORD")
+    admin_password_hash: str = Field(default="", alias="ADMIN_PASSWORD_HASH")
+    session_secret: str = Field("stupishly", alias="SESSION_SECRET")
+    session_ttl_seconds: int = Field(7 * 24 * 3600, alias="SESSION_TTL_SECONDS")
+    session_cookie_name: str = Field("novellone_session", alias="SESSION_COOKIE_NAME")
+    session_cookie_domain: Annotated[
+        str | None, Field(default=None, alias="SESSION_COOKIE_DOMAIN")
+    ]
+    session_cookie_secure: bool = Field(False, alias="SESSION_COOKIE_SECURE")
+    session_cookie_samesite: Literal["lax", "strict", "none"] = Field(
+        "lax", alias="SESSION_COOKIE_SAMESITE"
+    )
+
+    @field_validator("admin_password_hash", mode="after")
+    @classmethod
+    def hash_admin_password(cls, v: str, info) -> str:
+        import sys
+        print(f"[DEBUG] hash_admin_password validator called", file=sys.stderr)
+        print(f"[DEBUG]   admin_password_hash value: {v!r}", file=sys.stderr)
+        print(f"[DEBUG]   admin_password from info.data: {info.data.get('admin_password', '')!r}", file=sys.stderr)
+        
+        # If hash is already provided, use it
+        if v:
+            print(f"[DEBUG]   Using existing hash", file=sys.stderr)
+            return v
+        
+        # Otherwise hash the cleartext password
+        password = info.data.get("admin_password", "")
+        if not password:
+            print(f"[DEBUG]   ERROR: Both password and hash are empty!", file=sys.stderr)
+            raise ValueError("Either ADMIN_PASSWORD or ADMIN_PASSWORD_HASH must be set")
+        
+        print(f"[DEBUG]   Hashing cleartext password (length: {len(password)})", file=sys.stderr)
+        
+        # Truncate to 72 bytes if needed (bcrypt limitation)
+        if len(password.encode("utf-8")) > 72:
+            password = password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+            print(f"[DEBUG]   Truncated password to 72 bytes", file=sys.stderr)
+        
+        from passlib.context import CryptContext
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        hashed = pwd_context.hash(password)
+        print(f"[DEBUG]   Generated hash: {hashed[:20]}...", file=sys.stderr)
+        return hashed
 
     @property
     def evaluation_weights(self) -> "EvaluationWeights":

@@ -1,0 +1,44 @@
+# Railway Monorepo Configuration
+#
+# This project uses a monorepo structure with separate backend and frontend services.
+# Each service has its own railway.toml configuration file:
+#   - backend/railway.toml (Backend API service)
+#   - frontend/railway.toml (Frontend SvelteKit service)
+#
+# DEPLOYMENT INSTRUCTIONS:
+#
+# 1. Create a new Railway project from your GitHub repository
+#
+# 2. Add a PostgreSQL database:
+#    - Click "+ New" → "Database" → "PostgreSQL"
+#    - Railway will auto-generate DATABASE_URL
+#
+# 3. Deploy Backend Service:
+#    - Click "+ New" → "GitHub Repo" → Select this repository
+#    - In service settings, set "Root Directory" to: backend
+#    - In service settings, set "Watch Paths" to: backend/**
+#    - Railway will use backend/railway.toml and backend/Dockerfile
+#    - Add environment variables (see env.railway.example)
+#    - Link the PostgreSQL database (Variables → Add Reference)
+#    - Generate a public domain and copy the URL
+#
+# 4. Deploy Frontend Service:
+#    - Click "+ New" → "GitHub Repo" → Select this repository
+#    - In service settings, set "Root Directory" to: frontend
+#    - In service settings, set "Watch Paths" to: frontend/**
+#    - Railway will use frontend/railway.toml and frontend/Dockerfile
+#    - Set environment variables:
+#      * VITE_PUBLIC_API_URL=https://your-backend.up.railway.app
+#      * VITE_PUBLIC_WS_URL=wss://your-backend.up.railway.app/ws/stories
+#      * ORIGIN=https://your-frontend.up.railway.app
+#    - Generate a public domain
+#
+# 5. Configure CI/CD:
+#    - Railway automatically deploys on git push
+#    - Watch paths ensure only relevant services rebuild
+#
+# For detailed instructions, see: RAILWAY_DEPLOYMENT.md
+#
+# NOTE: This root railway.toml is for documentation only.
+# Railway uses the service-specific railway.toml files in backend/ and frontend/
+

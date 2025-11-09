@@ -45,9 +45,41 @@
     </div>
     <div>
       <span>Total Tokens</span>
-      <strong>{data.stats.total_tokens_used}</strong>
+      <strong>{data.stats.total_tokens_used.toLocaleString()}</strong>
     </div>
   </section>
+
+  {#if data.stats.text_statistics && data.stats.text_statistics.total_word_count > 0}
+    <section class="text-stats-summary">
+      <h2>Text Statistics</h2>
+      <div class="text-stats-grid">
+        <div class="text-stat-card">
+          <span>Total Words</span>
+          <strong>{data.stats.text_statistics.total_word_count.toLocaleString()}</strong>
+        </div>
+        <div class="text-stat-card">
+          <span>Avg Words/Chapter</span>
+          <strong>{data.stats.text_statistics.avg_words_per_chapter.toFixed(0)}</strong>
+        </div>
+        <div class="text-stat-card">
+          <span>Avg Word Length</span>
+          <strong>{data.stats.text_statistics.avg_word_length.toFixed(2)} chars</strong>
+        </div>
+        <div class="text-stat-card">
+          <span>Avg Sentence Length</span>
+          <strong>{data.stats.text_statistics.avg_sentence_length.toFixed(1)} words</strong>
+        </div>
+        <div class="text-stat-card">
+          <span>Unique Words</span>
+          <strong>{data.stats.text_statistics.total_unique_words.toLocaleString()}</strong>
+        </div>
+        <div class="text-stat-card">
+          <span>Lexical Diversity</span>
+          <strong>{(data.stats.text_statistics.overall_lexical_diversity * 100).toFixed(1)}%</strong>
+        </div>
+      </div>
+    </section>
+  {/if}
 
   <section class="chaos-summary">
     <h2>Average Chaos Parameters</h2>
@@ -237,5 +269,44 @@
     height: 100%;
     border-radius: 999px;
     transition: width 0.3s ease;
+  }
+
+  .text-stats-summary {
+    margin-bottom: 3rem;
+  }
+
+  .text-stats-summary h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: #38bdf8;
+  }
+
+  .text-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .text-stat-card {
+    background: rgba(15, 23, 42, 0.7);
+    padding: 1.5rem;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    text-align: center;
+  }
+
+  .text-stat-card span {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+    margin-bottom: 0.5rem;
+  }
+
+  .text-stat-card strong {
+    font-size: 1.75rem;
+    color: #38bdf8;
   }
 </style>

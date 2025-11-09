@@ -11,9 +11,11 @@ COPY --from=builder /app/build ./build
 COPY --from=builder /app/package*.json ./
 RUN npm ci --production
 
+
 # Set port for production
 ENV PORT=4000
 ENV HOST=0.0.0.0
 
 EXPOSE 4000
+
 CMD ["node", "build"]

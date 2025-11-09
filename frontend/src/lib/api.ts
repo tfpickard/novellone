@@ -13,9 +13,28 @@ if (!base) {
 
 const API_BASE = base.startsWith('http') ? base : `http://${base}`;
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly detail?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export class UnauthorizedError extends ApiError {
+  constructor(message: string, detail?: unknown) {
+    super(message, 401, detail);
+    this.name = 'UnauthorizedError';
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
+    credentials: init?.credentials ?? 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {})
@@ -24,8 +43,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = `API request failed: ${response.status}`;
+    let detail: unknown;
     try {
       const errorBody = await response.json();
+      detail = errorBody;
       if (typeof errorBody === 'string' && errorBody) {
         message = errorBody;
       } else if (errorBody?.detail) {
@@ -37,7 +58,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // ignore parse errors and fall back to status message
       void error;
     }
-    throw new Error(message);
+    if (response.status === 401) {
+      throw new UnauthorizedError(message, detail);
+    }
+    throw new ApiError(message, response.status, detail);
   }
 
   return response.json();

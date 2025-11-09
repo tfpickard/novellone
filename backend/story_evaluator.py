@@ -146,12 +146,13 @@ async def evaluate_story(story: Story, chapters: Sequence[Chapter]) -> dict[str,
     payload.setdefault("issues", [])
 
     weights = _settings.evaluation_weights
+    # Scores are on 0-10 scale, so we normalize to 0-1 by dividing by 10
     overall_score = (
         payload.get("coherence_score", 0.0) * weights.coherence
         + payload.get("novelty_score", 0.0) * weights.novelty
         + payload.get("engagement_score", 0.0) * weights.engagement
         + payload.get("pacing_score", 0.0) * weights.pacing
-    )
+    ) / 10.0
     payload["overall_score"] = overall_score
     return payload
 
