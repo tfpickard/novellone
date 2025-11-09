@@ -6,7 +6,7 @@
     "moduleResolution": "node",
     "module": "esnext",
     "target": "esnext",
-    "types": ["svelte"]
+    "types": ["svelte", "vitest/globals"]
   },
   "include": ["src/**/*", "src/node.d.ts"],
   "exclude": ["node_modules", "build"]

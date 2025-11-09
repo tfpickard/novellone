@@ -14,7 +14,7 @@ services:
 
   backend:
     build: ./backend
-    env_file: .env
+    env_file: ./.env
     depends_on:
       db:
         condition: service_healthy
@@ -37,6 +37,7 @@ services:
 
   frontend:
     build: ./frontend
+    env_file: ./.env
     environment:
       VITE_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://backend:8000}
       VITE_PUBLIC_WS_URL: ${PUBLIC_WS_URL:-ws://backend:8000/ws/stories}
