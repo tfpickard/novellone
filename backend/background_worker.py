@@ -136,7 +136,7 @@ class BackgroundWorker:
 
     async def _create_chapter(
         self, session, story: Story, config: RuntimeConfig
-    ) -> None:
+    ) -> Chapter:
         chapters_stmt = (
             select(Chapter)
             .where(Chapter.story_id == story.id)
@@ -216,6 +216,20 @@ class BackgroundWorker:
             evaluation.overall_score,
             evaluation.should_continue,
         )
+
+    async def generate_chapter_manual(
+        self, session, story: Story, config: RuntimeConfig
+    ) -> Chapter:
+        async with self._lock:
+            chapter = await self._create_chapter(session, story, config)
+
+            if (
+                story.chapter_count >= settings.min_chapters_before_eval
+                and story.chapter_count % config.evaluation_interval_chapters == 0
+            ):
+                await self._evaluate_story(session, story, config)
+
+        return chapter
 
     async def _complete_story(self, session, story: Story, reason: str) -> None:
         if story.status != "completed":

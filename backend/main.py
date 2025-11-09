@@ -343,16 +343,7 @@ async def generate_chapter_now(story_id: uuid.UUID, session: SessionDep) -> dict
     if story.chapter_count >= runtime_config.max_chapters_per_story:
         raise HTTPException(status_code=400, detail="Story already reached the maximum chapter count")
 
-    chapter = await worker._create_chapter(session, story, runtime_config)
-
-    await session.flush()
-    await session.refresh(story, attribute_names=["chapter_count", "status"])
-
-    if (
-        story.chapter_count >= settings.min_chapters_before_eval
-        and story.chapter_count % runtime_config.evaluation_interval_chapters == 0
-    ):
-        await worker._evaluate_story(session, story, runtime_config)
+    await worker.generate_chapter_manual(session, story, runtime_config)
 
     await session.commit()
 
@@ -360,11 +351,7 @@ async def generate_chapter_now(story_id: uuid.UUID, session: SessionDep) -> dict
     if not refreshed:
         raise HTTPException(status_code=404, detail="Story not found after generation")
 
-    logger.info(
-        "Manual chapter generation requested for story %s -> chapter %s",
-        refreshed.title,
-        chapter.chapter_number,
-    )
+    logger.info("Manual chapter generation requested for story %s", refreshed.title)
     return StoryDetail.from_model(refreshed).model_dump()
 
 
