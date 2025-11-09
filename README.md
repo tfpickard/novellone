@@ -183,7 +183,7 @@ This will:
 - Build backend & frontend images
 - Apply Alembic migrations on backend start
 - Serve FastAPI at `http://localhost:8000`
-- Serve SvelteKit frontend at `http://localhost:3000`
+- Serve SvelteKit frontend at `http://localhost:4000`
 
 ### Manual Development
 

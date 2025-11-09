@@ -1,0 +1,69 @@
+# Production Docker Compose Configuration
+# For deployment on VPS with nginx reverse proxy
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: novellone_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stories
+      POSTGRES_USER: ${POSTGRES_USER:-storyuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - novellone_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-storyuser}", "-d", "stories"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Only expose to internal network, not to host
+    # No ports mapping - accessed only by backend
+
+  backend:
+    build: ./backend
+    container_name: novellone_backend
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"  # Bind to localhost only (nginx proxies)
+    networks:
+      - novellone_network
+    volumes:
+      - ./logs/backend:/app/logs
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build: ./frontend
+    container_name: novellone_frontend
+    restart: unless-stopped
+    environment:
+      ORIGIN: https://hurl.lol
+      VITE_PUBLIC_API_URL: https://hurl.lol
+      VITE_PUBLIC_WS_URL: wss://hurl.lol/ws/stories
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:4000:4000"  # Bind to localhost only (nginx proxies)
+    networks:
+      - novellone_network
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  novellone_network:
+    driver: bridge
+

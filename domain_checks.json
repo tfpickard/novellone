@@ -1,0 +1,702 @@
+[
+  {
+    "domain": "fluxi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx fluxi.cx",
+    "whois_excerpt": "Domain Name: fluxi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:45.422Z <<<\n\n"
+  },
+  {
+    "domain": "quirki.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx quirki.cx",
+    "whois_excerpt": "Domain Name: quirki.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:46.503Z <<<\n\n"
+  },
+  {
+    "domain": "glitzi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx glitzi.cx",
+    "whois_excerpt": "Domain Name: glitzi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:47.629Z <<<\n\n"
+  },
+  {
+    "domain": "snappi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx snappi.cx",
+    "whois_excerpt": "Domain Name: snappi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:48.647Z <<<\n\n"
+  },
+  {
+    "domain": "zapti.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx zapti.cx",
+    "whois_excerpt": "Domain Name: zapti.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:49.708Z <<<\n\n"
+  },
+  {
+    "domain": "whimsi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx whimsi.cx",
+    "whois_excerpt": "Domain Name: whimsi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:50.757Z <<<\n\n"
+  },
+  {
+    "domain": "fizzi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx fizzi.cx",
+    "whois_excerpt": "Domain Name: fizzi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:51.816Z <<<\n\n"
+  },
+  {
+    "domain": "loopi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx loopi.cx",
+    "whois_excerpt": "Domain Name: loopi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:52.863Z <<<\n\n"
+  },
+  {
+    "domain": "spunki.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx spunki.cx",
+    "whois_excerpt": "Domain Name: spunki.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:53.891Z <<<\n\n"
+  },
+  {
+    "domain": "jazzi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx jazzi.cx",
+    "whois_excerpt": "Domain Name: jazzi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:54.959Z <<<\n\n"
+  },
+  {
+    "domain": "zesti.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx zesti.cx",
+    "whois_excerpt": "Domain Name: zesti.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:55.996Z <<<\n\n"
+  },
+  {
+    "domain": "frothi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx frothi.cx",
+    "whois_excerpt": "Domain Name: frothi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:57.048Z <<<\n\n"
+  },
+  {
+    "domain": "spryti.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx spryti.cx",
+    "whois_excerpt": "Domain Name: spryti.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:58.096Z <<<\n\n"
+  },
+  {
+    "domain": "nerdi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx nerdi.cx",
+    "whois_excerpt": "Domain Name: nerdi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:47:59.153Z <<<\n\n"
+  },
+  {
+    "domain": "sparkli.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx sparkli.cx",
+    "whois_excerpt": "Domain Name: sparkli.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:00.191Z <<<\n\n"
+  },
+  {
+    "domain": "vibi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx vibi.cx",
+    "whois_excerpt": "Domain Name: vibi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:01.241Z <<<\n\n"
+  },
+  {
+    "domain": "tangxi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx tangxi.cx",
+    "whois_excerpt": "Domain Name: tangxi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:02.285Z <<<\n\n"
+  },
+  {
+    "domain": "flicki.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx flicki.cx",
+    "whois_excerpt": "Domain Name: flicki.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:03.331Z <<<\n\n"
+  },
+  {
+    "domain": "glimmi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx glimmi.cx",
+    "whois_excerpt": "Domain Name: glimmi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:04.390Z <<<\n\n"
+  },
+  {
+    "domain": "zeali.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx zeali.cx",
+    "whois_excerpt": "Domain Name: zeali.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:05.431Z <<<\n\n"
+  },
+  {
+    "domain": "pixxi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx pixxi.cx",
+    "whois_excerpt": "Domain Name: pixxi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:06.485Z <<<\n\n"
+  },
+  {
+    "domain": "plixi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx plixi.cx",
+    "whois_excerpt": "Domain Name: plixi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:07.532Z <<<\n\n"
+  },
+  {
+    "domain": "wonki.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx wonki.cx",
+    "whois_excerpt": "Domain Name: wonki.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:08.586Z <<<\n\n"
+  },
+  {
+    "domain": "mixxi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx mixxi.cx",
+    "whois_excerpt": "Domain Name: mixxi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:09.636Z <<<\n\n"
+  },
+  {
+    "domain": "snazzy.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx snazzy.cx",
+    "whois_excerpt": "Domain Name: snazzy.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:10.691Z <<<\n\n"
+  },
+  {
+    "domain": "quirky.io",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io quirky.io",
+    "whois_excerpt": "Domain Name: quirky.io\nRegistry Domain ID: REDACTED\nRegistrar WHOIS Server: whois.godaddy.com\nRegistrar URL: http://www.godaddy.com/domains/search.aspx?ci=8990\nUpdated Date: 2025-11-05T11:10:52Z\nCreation Date: 2020-02-13T14:30:19Z\nRegistry Expiry Date: 2028-02-13T14:30:19Z\nRegistrar: GoDaddy.com, LLC\nRegistrar IANA ID: 146\nRegistrar Abuse Contact Email: abuse@godaddy.com\nRegistrar Abuse Contact Ph"
+  },
+  {
+    "domain": "zippy.so",
+    "status": "likely_available",
+    "whois_server": "whois.nic.so",
+    "command": "whois -h whois.nic.so zippy.so",
+    "whois_excerpt": "Domain Name: zippy.so\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:12.648Z <<<\n\n"
+  },
+  {
+    "domain": "hypey.io",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io hypey.io",
+    "whois_excerpt": "Domain Name: hypey.io\nRegistry Domain ID: REDACTED\nRegistrar WHOIS Server: www.hostinger.com\nRegistrar URL: http://www.hostinger.com\nUpdated Date: 2025-11-05T00:42:46Z\nCreation Date: 2023-08-23T21:15:47Z\nRegistry Expiry Date: 2025-08-23T21:15:47Z\nRegistrar: HOSTINGER operations, UAB\nRegistrar IANA ID: 1636\nRegistrar Abuse Contact Email: abuse@hostinger.com\nRegistrar Abuse Contact Phone: +370.64503"
+  },
+  {
+    "domain": "blip.space",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space blip.space",
+    "whois_excerpt": "Domain Name: BLIP.SPACE\nRegistry Domain ID: D379988010-CNIC\nRegistrar WHOIS Server: whois.namecheap.com\nRegistrar URL: https://namecheap.com\nUpdated Date: 2024-09-09T13:50:11.0Z\nCreation Date: 2023-07-09T17:03:45.0Z\nRegistry Expiry Date: 2030-07-09T23:59:59.0Z\nRegistrar: Namecheap\nRegistrar IANA ID: 1068\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nName Se"
+  },
+  {
+    "domain": "zest.so",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.so",
+    "command": "whois -h whois.nic.so zest.so",
+    "whois_excerpt": "Domain Name: zest.so\nRegistry Domain ID: 34347-sonic\nUpdated Date: 2025-01-13T11:55:02Z\nCreation Date: 2014-01-13T00:00:00Z\nRegistry Expiry Date: 2026-01-13T00:00:00Z\nRegistrar Registration Expiration Date: 2026-01-13T00:00:00Z\nRegistrar: Synergy Wholesale Pty Ltd\nRegistrar IANA ID: 1609\nRegistrar Street Address: Suite 105, 66 Victor Crescent\nNarre Warren\nVictoria\t3805\nRegistrar Email: registry@sy"
+  },
+  {
+    "domain": "spark.so",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.so",
+    "command": "whois -h whois.nic.so spark.so",
+    "whois_excerpt": "Domain Name: spark.so\nRegistry Domain ID: 127035-sonic\nRegistrar WHOIS Server: whois.namecheap.com\nUpdated Date: 2025-11-06T18:56:06Z\nCreation Date: 2020-06-23T16:57:02Z\nRegistry Expiry Date: 2026-06-23T16:57:02Z\nRegistrar Registration Expiration Date: 2026-06-23T16:57:02Z\nRegistrar: NameCheap\nRegistrar IANA ID: 1068\nRegistrar Street Address: Street No. 4600, East Washington Street, Suite 305\nRegi"
+  },
+  {
+    "domain": "vibey.app",
+    "status": "likely_registered",
+    "whois_server": "default",
+    "command": "whois vibey.app",
+    "whois_excerpt": "% IANA WHOIS server\n% for more information on IANA, visit http://www.iana.org\n% This query returned 1 object\n\nrefer:        \n\ndomain:       APP\n\norganisation: Charleston Road Registry Inc.\naddress:      1600 Amphitheatre Parkway\naddress:      Mountain View CA 94043\naddress:      United States of America (the)\n\ncontact:      administrative\nname:         TLD Admin\norganisation: Google Inc.\naddress: "
+  },
+  {
+    "domain": "glee.so",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.so",
+    "command": "whois -h whois.nic.so glee.so",
+    "whois_excerpt": "Domain Name: glee.so\nRegistry Domain ID: 279501-sonic\nRegistrar WHOIS Server: whois.namecheap.com\nUpdated Date: 2024-12-10T16:00:11Z\nCreation Date: 2024-12-05T13:20:46Z\nRegistry Expiry Date: 2025-12-05T13:20:46Z\nRegistrar Registration Expiration Date: 2025-12-05T13:20:46Z\nRegistrar: NameCheap\nRegistrar IANA ID: 1068\nRegistrar Street Address: Street No. 4600, East Washington Street, Suite 305\nRegis"
+  },
+  {
+    "domain": "zingy.app",
+    "status": "likely_registered",
+    "whois_server": "default",
+    "command": "whois zingy.app",
+    "whois_excerpt": "% IANA WHOIS server\n% for more information on IANA, visit http://www.iana.org\n% This query returned 1 object\n\nrefer:        \n\ndomain:       APP\n\norganisation: Charleston Road Registry Inc.\naddress:      1600 Amphitheatre Parkway\naddress:      Mountain View CA 94043\naddress:      United States of America (the)\n\ncontact:      administrative\nname:         TLD Admin\norganisation: Google Inc.\naddress: "
+  },
+  {
+    "domain": "snickr.io",
+    "status": "likely_available",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io snickr.io",
+    "whois_excerpt": "Domain not found.\n>>> Last update of WHOIS database: 2025-11-09T05:48:20Z <<<\n\n"
+  },
+  {
+    "domain": "frotl.com",
+    "status": "likely_available",
+    "whois_server": "whois.verisign-grs.com",
+    "command": "whois -h whois.verisign-grs.com frotl.com",
+    "whois_excerpt": "No match for domain \"FROTL.COM\".\n>>> Last update of whois database: 2025-11-09T05:48:02Z <<<\n\n"
+  },
+  {
+    "domain": "jovii.com",
+    "status": "likely_registered",
+    "whois_server": "whois.verisign-grs.com",
+    "command": "whois -h whois.verisign-grs.com jovii.com",
+    "whois_excerpt": "   Domain Name: JOVII.COM\n   Registry Domain ID: 568174443_DOMAIN_COM-VRSN\n   Registrar WHOIS Server: whois.eurodns.com\n   Registrar URL: http://www.EuroDNS.com\n   Updated Date: 2025-08-18T07:15:13Z\n   Creation Date: 2006-08-24T18:49:55Z\n   Registry Expiry Date: 2026-08-24T18:49:55Z\n   Registrar: EuroDNS S.A.\n   Registrar IANA ID: 1052\n   Registrar Abuse Contact Email: legalservices@eurodns.com\n  "
+  },
+  {
+    "domain": "glimmi.com",
+    "status": "likely_registered",
+    "whois_server": "whois.verisign-grs.com",
+    "command": "whois -h whois.verisign-grs.com glimmi.com",
+    "whois_excerpt": "   Domain Name: GLIMMI.COM\n   Registry Domain ID: 2749161032_DOMAIN_COM-VRSN\n   Registrar WHOIS Server: whois.namebright.com\n   Registrar URL: http://www.NameBright.com\n   Updated Date: 2025-11-01T15:55:46Z\n   Creation Date: 2023-01-04T19:15:32Z\n   Registry Expiry Date: 2027-01-04T19:15:32Z\n   Registrar: DropCatch.com 528 LLC\n   Registrar IANA ID: 2008\n   Registrar Abuse Contact Email: support@nam"
+  },
+  {
+    "domain": "twixl.com",
+    "status": "likely_registered",
+    "whois_server": "whois.verisign-grs.com",
+    "command": "whois -h whois.verisign-grs.com twixl.com",
+    "whois_excerpt": "   Domain Name: TWIXL.COM\n   Registry Domain ID: 745726131_DOMAIN_COM-VRSN\n   Registrar WHOIS Server: whois.godaddy.com\n   Registrar URL: http://www.godaddy.com\n   Updated Date: 2022-09-04T01:09:46Z\n   Creation Date: 2007-01-09T05:01:05Z\n   Registry Expiry Date: 2026-06-13T11:59:59Z\n   Registrar: GoDaddy.com, LLC\n   Registrar IANA ID: 146\n   Registrar Abuse Contact Email: abuse@godaddy.com\n   Regi"
+  },
+  {
+    "domain": "flickr.io",
+    "status": "likely_available",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io flickr.io",
+    "whois_excerpt": "This domain is currently available for application via the Identity Digital Dropzone service.\n>>> Last update of WHOIS database: 2025-11-09T05:48:23Z <<<\n\n"
+  },
+  {
+    "domain": "vortx.io",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io vortx.io",
+    "whois_excerpt": "Domain Name: vortx.io\nRegistry Domain ID: REDACTED\nRegistrar WHOIS Server: whois.godaddy.com\nRegistrar URL: http://www.godaddy.com/domains/search.aspx?ci=8990\nUpdated Date: 2025-10-03T11:02:29Z\nCreation Date: 2015-09-30T18:47:58Z\nRegistry Expiry Date: 2026-09-30T18:47:58Z\nRegistrar: GoDaddy.com, LLC\nRegistrar IANA ID: 146\nRegistrar Abuse Contact Email: abuse@godaddy.com\nRegistrar Abuse Contact Pho"
+  },
+  {
+    "domain": "zappr.io",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io zappr.io",
+    "whois_excerpt": "Domain Name: zappr.io\nRegistry Domain ID: REDACTED\nRegistrar WHOIS Server: whois.porkbun.com\nRegistrar URL: http://porkbun.com\nUpdated Date: 2025-01-29T02:14:34Z\nCreation Date: 2024-08-08T07:16:21Z\nRegistry Expiry Date: 2026-08-08T07:16:21Z\nRegistrar: Porkbun LLC\nRegistrar IANA ID: 1861\nRegistrar Abuse Contact Email: abuse+registry@porkbun.com\nRegistrar Abuse Contact Phone: +1.8557675286\nDomain St"
+  },
+  {
+    "domain": "spunq.io",
+    "status": "likely_available",
+    "whois_server": "whois.nic.io",
+    "command": "whois -h whois.nic.io spunq.io",
+    "whois_excerpt": "Domain not found.\n>>> Last update of WHOIS database: 2025-11-09T05:48:26Z <<<\n\n"
+  },
+  {
+    "domain": "quarky.co",
+    "status": "likely_registered",
+    "whois_server": "default",
+    "command": "whois quarky.co",
+    "whois_excerpt": "% IANA WHOIS server\n% for more information on IANA, visit http://www.iana.org\n% This query returned 1 object\n\nrefer:        whois.registry.co\n\ndomain:       CO\n\norganisation: Ministry of Information and Communications Technologies (MinTIC)\naddress:      Edificio Murillo Toro\naddress:      Cra.8 #Entre Calles 12A y 12B\naddress:      Bogot\u00e1 D.C. Cundinamarca 111711\naddress:      Colombia\n\ncontact:  "
+  },
+  {
+    "domain": "sniply.co",
+    "status": "likely_registered",
+    "whois_server": "default",
+    "command": "whois sniply.co",
+    "whois_excerpt": "% IANA WHOIS server\n% for more information on IANA, visit http://www.iana.org\n% This query returned 1 object\n\nrefer:        whois.registry.co\n\ndomain:       CO\n\norganisation: Ministry of Information and Communications Technologies (MinTIC)\naddress:      Edificio Murillo Toro\naddress:      Cra.8 #Entre Calles 12A y 12B\naddress:      Bogot\u00e1 D.C. Cundinamarca 111711\naddress:      Colombia\n\ncontact:  "
+  },
+  {
+    "domain": "quirky.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx quirky.cx",
+    "whois_excerpt": "Domain Name: quirky.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:50.042Z <<<\n\n"
+  },
+  {
+    "domain": "buzzli.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx buzzli.cx",
+    "whois_excerpt": "Domain Name: buzzli.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:51.047Z <<<\n\n"
+  },
+  {
+    "domain": "snaxi.cx",
+    "status": "likely_available",
+    "whois_server": "whois.nic.cx",
+    "command": "whois -h whois.nic.cx snaxi.cx",
+    "whois_excerpt": "Domain Name: snaxi.cx\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:52.100Z <<<\n\n"
+  },
+  {
+    "domain": "spunki.so",
+    "status": "likely_available",
+    "whois_server": "whois.nic.so",
+    "command": "whois -h whois.nic.so spunki.so",
+    "whois_excerpt": "Domain Name: spunki.so\nThe queried object does not exist: No Object Found\n>>> Last update of WHOIS database: 2025-11-09T05:48:53.119Z <<<\n\n"
+  },
+  {
+    "domain": "frova.fun",
+    "status": "likely_available",
+    "whois_server": "whois.nic.fun",
+    "command": "whois -h whois.nic.fun frova.fun",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:54.0Z <<<\n\n"
+  },
+  {
+    "domain": "brasu.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz brasu.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:55.0Z <<<\n\n"
+  },
+  {
+    "domain": "choli.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol choli.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:55.0Z <<<\n\n"
+  },
+  {
+    "domain": "chotu.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol chotu.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:56.0Z <<<\n\n"
+  },
+  {
+    "domain": "cluxy.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space cluxy.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:57.0Z <<<\n\n"
+  },
+  {
+    "domain": "drima.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz drima.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:58.0Z <<<\n\n"
+  },
+  {
+    "domain": "druxa.fun",
+    "status": "likely_available",
+    "whois_server": "whois.nic.fun",
+    "command": "whois -h whois.nic.fun druxa.fun",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:48:59.0Z <<<\n\n"
+  },
+  {
+    "domain": "fayso.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz fayso.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:00.0Z <<<\n\n"
+  },
+  {
+    "domain": "fiebo.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol fiebo.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:01.0Z <<<\n\n"
+  },
+  {
+    "domain": "foegu.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest foegu.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:02.0Z <<<\n\n"
+  },
+  {
+    "domain": "gaexu.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz gaexu.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:03.0Z <<<\n\n"
+  },
+  {
+    "domain": "giuro.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest giuro.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:04.0Z <<<\n\n"
+  },
+  {
+    "domain": "giyto.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest giyto.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:05.0Z <<<\n\n"
+  },
+  {
+    "domain": "gremy.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space gremy.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:06.0Z <<<\n\n"
+  },
+  {
+    "domain": "guata.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space guata.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:07.0Z <<<\n\n"
+  },
+  {
+    "domain": "guumu.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz guumu.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:08.0Z <<<\n\n"
+  },
+  {
+    "domain": "hauvi.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest hauvi.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:09.0Z <<<\n\n"
+  },
+  {
+    "domain": "hieso.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space hieso.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:10.0Z <<<\n\n"
+  },
+  {
+    "domain": "hiufi.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol hiufi.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:10.0Z <<<\n\n"
+  },
+  {
+    "domain": "houry.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest houry.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:11.0Z <<<\n\n"
+  },
+  {
+    "domain": "huoro.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol huoro.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:12.0Z <<<\n\n"
+  },
+  {
+    "domain": "klovu.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz klovu.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:13.0Z <<<\n\n"
+  },
+  {
+    "domain": "plysu.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest plysu.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:14.0Z <<<\n\n"
+  },
+  {
+    "domain": "qeupa.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space qeupa.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:15.0Z <<<\n\n"
+  },
+  {
+    "domain": "qiaku.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest qiaku.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:16.0Z <<<\n\n"
+  },
+  {
+    "domain": "qiila.club",
+    "status": "likely_available",
+    "whois_server": "whois.nic.club",
+    "command": "whois -h whois.nic.club qiila.club",
+    "whois_excerpt": "No Data Found\nURL of the ICANN Whois Inaccuracy Complaint Form: https://www.icann.org/wicf/\n>>> Last update of WHOIS database: 2025-11-09T05:49:17Z <<<\n\n"
+  },
+  {
+    "domain": "qiumo.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest qiumo.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:18.0Z <<<\n\n"
+  },
+  {
+    "domain": "raexu.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space raexu.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:19.0Z <<<\n\n"
+  },
+  {
+    "domain": "raosu.fun",
+    "status": "likely_available",
+    "whois_server": "whois.nic.fun",
+    "command": "whois -h whois.nic.fun raosu.fun",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:20.0Z <<<\n\n"
+  },
+  {
+    "domain": "riobi.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol riobi.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:21.0Z <<<\n\n"
+  },
+  {
+    "domain": "rouxa.fun",
+    "status": "likely_available",
+    "whois_server": "whois.nic.fun",
+    "command": "whois -h whois.nic.fun rouxa.fun",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:22.0Z <<<\n\n"
+  },
+  {
+    "domain": "royka.fun",
+    "status": "likely_available",
+    "whois_server": "whois.nic.fun",
+    "command": "whois -h whois.nic.fun royka.fun",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:23.0Z <<<\n\n"
+  },
+  {
+    "domain": "skalo.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest skalo.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:24.0Z <<<\n\n"
+  },
+  {
+    "domain": "snalo.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest snalo.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:25.0Z <<<\n\n"
+  },
+  {
+    "domain": "swega.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest swega.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:26.0Z <<<\n\n"
+  },
+  {
+    "domain": "swisa.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest swisa.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:27.0Z <<<\n\n"
+  },
+  {
+    "domain": "tripo.space",
+    "status": "likely_registered",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space tripo.space",
+    "whois_excerpt": "Domain Name: TRIPO.SPACE\nRegistry Domain ID: D544773528-CNIC\nRegistrar WHOIS Server: whois.namecheap.com\nRegistrar URL: https://namecheap.com\nUpdated Date: 2025-05-01T10:56:06.0Z\nCreation Date: 2025-04-17T15:08:02.0Z\nRegistry Expiry Date: 2026-04-17T23:59:59.0Z\nRegistrar: Namecheap\nRegistrar IANA ID: 1068\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nName S"
+  },
+  {
+    "domain": "twanu.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol twanu.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:29.0Z <<<\n\n"
+  },
+  {
+    "domain": "twimi.fun",
+    "status": "likely_available",
+    "whois_server": "whois.nic.fun",
+    "command": "whois -h whois.nic.fun twimi.fun",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:30.0Z <<<\n\n"
+  },
+  {
+    "domain": "vrabu.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space vrabu.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:31.0Z <<<\n\n"
+  },
+  {
+    "domain": "vrusa.club",
+    "status": "likely_available",
+    "whois_server": "whois.nic.club",
+    "command": "whois -h whois.nic.club vrusa.club",
+    "whois_excerpt": "No Data Found\nURL of the ICANN Whois Inaccuracy Complaint Form: https://www.icann.org/wicf/\n>>> Last update of WHOIS database: 2025-11-09T05:49:32Z <<<\n\n"
+  },
+  {
+    "domain": "whamy.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz whamy.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:33.0Z <<<\n\n"
+  },
+  {
+    "domain": "whuxi.club",
+    "status": "likely_available",
+    "whois_server": "whois.nic.club",
+    "command": "whois -h whois.nic.club whuxi.club",
+    "whois_excerpt": "No Data Found\nURL of the ICANN Whois Inaccuracy Complaint Form: https://www.icann.org/wicf/\n>>> Last update of WHOIS database: 2025-11-09T05:49:33Z <<<\n\n"
+  },
+  {
+    "domain": "xiava.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest xiava.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:34.0Z <<<\n\n"
+  },
+  {
+    "domain": "xiely.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest xiely.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:35.0Z <<<\n\n"
+  },
+  {
+    "domain": "xiuxu.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz xiuxu.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:36.0Z <<<\n\n"
+  },
+  {
+    "domain": "xoira.space",
+    "status": "likely_available",
+    "whois_server": "whois.nic.space",
+    "command": "whois -h whois.nic.space xoira.space",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:37.0Z <<<\n\n"
+  },
+  {
+    "domain": "xuilu.quest",
+    "status": "likely_available",
+    "whois_server": "whois.nic.quest",
+    "command": "whois -h whois.nic.quest xuilu.quest",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:38.0Z <<<\n\n"
+  },
+  {
+    "domain": "xuuku.xyz",
+    "status": "likely_available",
+    "whois_server": "whois.nic.xyz",
+    "command": "whois -h whois.nic.xyz xuuku.xyz",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:39.0Z <<<\n\n"
+  },
+  {
+    "domain": "zioly.club",
+    "status": "likely_available",
+    "whois_server": "whois.nic.club",
+    "command": "whois -h whois.nic.club zioly.club",
+    "whois_excerpt": "No Data Found\nURL of the ICANN Whois Inaccuracy Complaint Form: https://www.icann.org/wicf/\n>>> Last update of WHOIS database: 2025-11-09T05:49:40Z <<<\n\n"
+  },
+  {
+    "domain": "ziymu.lol",
+    "status": "likely_available",
+    "whois_server": "whois.nic.lol",
+    "command": "whois -h whois.nic.lol ziymu.lol",
+    "whois_excerpt": "The queried object does not exist: DOMAIN NOT FOUND\n\n>>> Last update of WHOIS database: 2025-11-09T05:49:41.0Z <<<\n\n"
+  }
+]
