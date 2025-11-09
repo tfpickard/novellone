@@ -223,6 +223,12 @@ class ConfigUpdate(BaseModel):
     min_active_stories: Annotated[int | None, Field(default=None, ge=0, le=100)] = None
     max_active_stories: Annotated[int | None, Field(default=None, ge=1, le=200)] = None
     context_window_chapters: Annotated[int | None, Field(default=None, ge=1, le=50)] = None
+    openai_model: Annotated[str | None, Field(default=None, min_length=1, max_length=128)] = None
+    openai_premise_model: Annotated[str | None, Field(default=None, min_length=1, max_length=128)] = None
+    openai_eval_model: Annotated[str | None, Field(default=None, min_length=1, max_length=128)] = None
+    openai_temperature_chapter: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
+    openai_temperature_premise: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
+    openai_temperature_eval: Annotated[float | None, Field(default=None, ge=0.0, le=2.0)] = None
 
 
 @app.get("/api/config")
