@@ -83,7 +83,7 @@ async def extract_universe_from_stories(
                 element_type="character",
                 name=char_name,
                 description=char_data.get("description", ""),
-                metadata=char_data,
+                element_metadata=char_data,
             )
             session.add(element)
 
@@ -95,7 +95,7 @@ async def extract_universe_from_stories(
                 element_type="setting",
                 name=setting_name,
                 description=setting_data.get("description", ""),
-                metadata=setting_data,
+                element_metadata=setting_data,
             )
             session.add(element)
 
@@ -107,7 +107,7 @@ async def extract_universe_from_stories(
                 element_type="theme",
                 name=theme_name,
                 description=theme_data.get("description", ""),
-                metadata=theme_data,
+                element_metadata=theme_data,
             )
             session.add(element)
 
@@ -119,7 +119,7 @@ async def extract_universe_from_stories(
                 element_type="lore",
                 name=lore_topic,
                 description=lore_data.get("description", ""),
-                metadata=lore_data,
+                element_metadata=lore_data,
             )
             session.add(element)
 

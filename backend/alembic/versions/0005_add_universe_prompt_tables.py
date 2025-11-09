@@ -48,7 +48,7 @@ def upgrade() -> None:
         sa.Column('element_type', sa.String(50), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('element_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column('extracted_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.ForeignKeyConstraint(['universe_prompt_id'], ['universe_prompts.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['source_story_id'], ['stories.id'], ondelete='CASCADE'),

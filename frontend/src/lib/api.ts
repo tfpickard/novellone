@@ -157,7 +157,7 @@ export type UniverseElement = {
   element_type: string;
   name: string;
   description: string | null;
-  metadata: any;
+  element_metadata: any;
   extracted_at: string;
 };
 

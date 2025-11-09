@@ -155,7 +155,7 @@ class UniverseElement(Base):
     element_type: Mapped[str] = mapped_column(String(50), index=True)  # character, setting, theme, lore
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # Type-specific data
+    element_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # Type-specific data
 
     extracted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
