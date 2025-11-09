@@ -19,8 +19,14 @@ class RuntimeConfig:
     min_active_stories: int
     max_active_stories: int
     context_window_chapters: int
+    openai_model: str
+    openai_premise_model: str
+    openai_eval_model: str
+    openai_temperature_chapter: float
+    openai_temperature_premise: float
+    openai_temperature_eval: float
 
-    def as_dict(self) -> dict[str, int | float]:
+    def as_dict(self) -> dict[str, int | float | str]:
         return {
             "chapter_interval_seconds": self.chapter_interval_seconds,
             "evaluation_interval_chapters": self.evaluation_interval_chapters,
@@ -29,6 +35,12 @@ class RuntimeConfig:
             "min_active_stories": self.min_active_stories,
             "max_active_stories": self.max_active_stories,
             "context_window_chapters": self.context_window_chapters,
+            "openai_model": self.openai_model,
+            "openai_premise_model": self.openai_premise_model,
+            "openai_eval_model": self.openai_eval_model,
+            "openai_temperature_chapter": self.openai_temperature_chapter,
+            "openai_temperature_premise": self.openai_temperature_premise,
+            "openai_temperature_eval": self.openai_temperature_eval,
         }
 
 
@@ -42,15 +54,21 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "min_active_stories": {"type": int, "min": 0, "max": 100},
     "max_active_stories": {"type": int, "min": 1, "max": 200},
     "context_window_chapters": {"type": int, "min": 1, "max": 50},
+    "openai_model": {"type": str, "min_length": 1, "max_length": 128},
+    "openai_premise_model": {"type": str, "min_length": 1, "max_length": 128},
+    "openai_eval_model": {"type": str, "min_length": 1, "max_length": 128},
+    "openai_temperature_chapter": {"type": float, "min": 0.0, "max": 2.0},
+    "openai_temperature_premise": {"type": float, "min": 0.0, "max": 2.0},
+    "openai_temperature_eval": {"type": float, "min": 0.0, "max": 2.0},
 }
 
-_DEFAULTS: dict[str, int | float] = {
+_DEFAULTS: dict[str, int | float | str] = {
     key: getattr(_settings, key)
     for key in _CONFIG_SCHEMA
 }
 
 
-def _coerce_value(key: str, value: Any) -> int | float:
+def _coerce_value(key: str, value: Any) -> int | float | str:
     meta = _CONFIG_SCHEMA[key]
     target = meta["type"]
     if value is None:
@@ -62,13 +80,29 @@ def _coerce_value(key: str, value: Any) -> int | float:
             coerced = int(float(value))
         else:
             raise ValueError(f"Invalid value for {key}")
-    else:
+    elif target is float:
         if isinstance(value, (int, float)):
             coerced = float(value)
         elif isinstance(value, str) and value.strip():
             coerced = float(value)
         else:
             raise ValueError(f"Invalid value for {key}")
+    elif target is str:
+        if isinstance(value, str):
+            coerced = value.strip()
+        else:
+            coerced = str(value).strip()
+        if not coerced:
+            raise ValueError(f"{key} cannot be empty")
+        min_length = meta.get("min_length")
+        max_length = meta.get("max_length")
+        if min_length is not None and len(coerced) < min_length:
+            raise ValueError(f"{key} must be at least {min_length} characters")
+        if max_length is not None and len(coerced) > max_length:
+            raise ValueError(f"{key} must be at most {max_length} characters")
+        return coerced
+    else:
+        raise ValueError(f"Unsupported type for {key}")
 
     minimum = meta.get("min")
     maximum = meta.get("max")
@@ -81,10 +115,10 @@ def _coerce_value(key: str, value: Any) -> int | float:
 
 def _validate_updates(
     updates: Mapping[str, Any], current: RuntimeConfig
-) -> dict[str, int | float]:
+) -> dict[str, int | float | str]:
     if not updates:
         return {}
-    cleaned: dict[str, int | float] = {}
+    cleaned: dict[str, int | float | str] = {}
     for key, value in updates.items():
         if key not in _CONFIG_SCHEMA:
             raise ValueError(f"Unknown configuration key: {key}")

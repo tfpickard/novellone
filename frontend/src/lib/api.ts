@@ -77,6 +77,12 @@ export type RuntimeConfig = {
   min_active_stories: number;
   max_active_stories: number;
   context_window_chapters: number;
+  openai_model: string;
+  openai_premise_model: string;
+  openai_eval_model: string;
+  openai_temperature_chapter: number;
+  openai_temperature_premise: number;
+  openai_temperature_eval: number;
 };
 
 export function getStories(params: URLSearchParams): Promise<any> {
