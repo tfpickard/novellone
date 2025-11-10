@@ -712,7 +712,7 @@
         rows={directiveTextareaRows}
         bind:value={promptDirectivesInput}
         placeholder={'Push toward dream-logic multiverses\nEmbrace slapstick temporal loops'}
-      />
+      ></textarea>
       {#if promptError}
         <p class="field-error">{promptError}</p>
       {/if}
@@ -723,7 +723,7 @@
         rows="3"
         bind:value={promptRationaleInput}
         placeholder="Document why these directives are in play so future refreshes have context."
-      />
+      ></textarea>
 
       <div class="prompt-actions">
         <button type="submit" disabled={!promptDirty || promptSaving}>

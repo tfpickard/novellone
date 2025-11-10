@@ -1,8 +1,13 @@
 import type { PageLoad } from './$types';
-import { getStats, getConfig } from '$lib/api';
+import { getStats, getConfig, getUniverseOverview, getUniverseMetrics } from '$lib/api';
 
 export const load: PageLoad = async () => {
-  const [stats, config] = await Promise.all([getStats(), getConfig()]);
-  return { stats, config };
+  const [stats, config, universe, meta] = await Promise.all([
+    getStats(),
+    getConfig(),
+    getUniverseOverview(),
+    getUniverseMetrics()
+  ]);
+  return { stats, config, universe, meta };
 };
 

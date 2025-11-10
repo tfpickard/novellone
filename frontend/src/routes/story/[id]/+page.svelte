@@ -7,7 +7,10 @@
   import {
     killStory as killStoryRequest,
     deleteStory as deleteStoryRequest,
-    generateChapter as generateChapterRequest
+    generateChapter as generateChapterRequest,
+    createEntityOverride,
+    deleteEntityOverride,
+    UnauthorizedError
   } from '$lib/api';
   import StoryTimeline from '$lib/components/StoryTimeline.svelte';
   import StoryDna from '$lib/components/StoryDna.svelte';
@@ -27,11 +30,103 @@
   const pendingChapterIds: Set<string> = new Set();
 
   let theme = story.theme_json as StoryTheme;
+  let universe = story.universe;
   $: theme = story.theme_json as StoryTheme;
+  $: universe = story.universe;
   $: if (container && theme) {
     applyStoryTheme(theme, container);
   }
   $: premiseHtml = renderMarkdown(story.premise);
+
+  let overrides = (story.entity_overrides as any[]) ?? [];
+  let overrideScope: 'story' | 'global' = 'story';
+  let overrideAction: 'suppress' | 'merge' = 'suppress';
+  let overrideName = '';
+  let overrideTarget = '';
+  let overrideNotes = '';
+  let overrideSaving = false;
+  let overrideError: string | null = null;
+  const removingOverrides: Record<string, boolean> = {};
+
+  const hasUniverseContext = (context: any) => {
+    if (!context) return false;
+    const relatedCount = context.related_stories?.length ?? 0;
+    return Boolean(context.cluster_id || relatedCount > 0);
+  };
+
+  const formatCohesion = (value: number | null | undefined) =>
+    typeof value === 'number' ? value.toFixed(2) : '0.00';
+
+  const formatTimestamp = (value: string | null | undefined) =>
+    value ? new Date(value).toLocaleString() : '—';
+
+  const resetOverrideForm = () => {
+    overrideScope = 'story';
+    overrideAction = 'suppress';
+    overrideName = '';
+    overrideTarget = '';
+    overrideNotes = '';
+  };
+
+  const submitOverride = async () => {
+    if (overrideSaving) return;
+    overrideSaving = true;
+    overrideError = null;
+    try {
+      const name = overrideName.trim();
+      const target = overrideTarget.trim();
+      if (!name) {
+        overrideError = 'Entity name is required.';
+        return;
+      }
+      if (overrideAction === 'merge' && !target) {
+        overrideError = 'Provide the canonical name to merge into.';
+        return;
+      }
+
+      const created = await createEntityOverride({
+        story_id: overrideScope === 'story' ? story.id : null,
+        name,
+        action: overrideAction,
+        target_name: overrideAction === 'merge' ? target : null,
+        notes: overrideNotes.trim() || null
+      });
+      overrides = [created, ...overrides.filter((item) => item.id !== created.id)];
+      story = { ...story, entity_overrides: overrides } as typeof story;
+      resetOverrideForm();
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        overrideError = 'Admin access required to manage overrides.';
+      } else if (error instanceof Error) {
+        overrideError = error.message;
+      } else {
+        overrideError = 'Failed to save override.';
+      }
+    } finally {
+      overrideSaving = false;
+    }
+  };
+
+  const removeOverride = async (overrideId: string) => {
+    if (removingOverrides[overrideId]) return;
+    removingOverrides[overrideId] = true;
+    overrideError = null;
+    try {
+      await deleteEntityOverride(overrideId);
+      overrides = overrides.filter((item) => item.id !== overrideId);
+      story = { ...story, entity_overrides: overrides } as typeof story;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        overrideError = 'Admin access required to manage overrides.';
+      } else if (error instanceof Error) {
+        overrideError = error.message;
+      } else {
+        overrideError = 'Failed to delete override.';
+      }
+    } finally {
+      delete removingOverrides[overrideId];
+    }
+  };
 
   async function handleSocket(message: StorySocketMessage) {
     if (message.type === 'system_reset') {
@@ -213,7 +308,163 @@
           </div>
         {/if}
       </aside>
-      
+
+      {#if hasUniverseContext(universe)}
+        <aside class="universe-panel">
+          <h3>Shared Universe</h3>
+          {#if universe?.cluster_id}
+            <div class="universe-cluster">
+              <div class="cluster-label">{universe?.cluster_label ?? 'Continuity Cluster'}</div>
+              <div class="cluster-meta">
+                <span><strong>{universe?.cluster_size ?? 0}</strong> stories linked</span>
+                <span>Cohesion <strong>{formatCohesion(universe?.cohesion)}</strong></span>
+              </div>
+            </div>
+          {/if}
+
+          {#if universe?.related_stories?.length}
+            <div class="related-block">
+              <h4>Intersecting Stories</h4>
+              <ul>
+                {#each universe.related_stories as related}
+                  <li>
+                    <a href={`/story/${related.story_id}`}>
+                      <div class="related-heading">
+                        <strong>{related.title || 'Untitled Story'}</strong>
+                        <span class="related-weight">Affinity {formatCohesion(related.weight)}</span>
+                      </div>
+                      {#if related.shared_entities?.length}
+                        <div class="shared-row">
+                          <span class="shared-label">Characters</span>
+                          <div class="shared-chips">
+                            {#each related.shared_entities.slice(0, 4) as entity}
+                              <span class="chip">{entity}</span>
+                            {/each}
+                            {#if related.shared_entities.length > 4}
+                              <span class="chip more">+{related.shared_entities.length - 4}</span>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+                      {#if related.shared_themes?.length}
+                        <div class="shared-row">
+                          <span class="shared-label">Motifs</span>
+                          <div class="shared-chips">
+                            {#each related.shared_themes.slice(0, 4) as theme}
+                              <span class="chip">{theme}</span>
+                            {/each}
+                            {#if related.shared_themes.length > 4}
+                              <span class="chip more">+{related.shared_themes.length - 4}</span>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {:else if universe?.cluster_id}
+            <p class="universe-empty">This story shares a continuity thread, but no direct crossovers have surfaced yet.</p>
+          {/if}
+
+          <div class="override-block">
+            <h4>Manual Corrections</h4>
+            <form class="override-form" on:submit|preventDefault={submitOverride}>
+              <div class="field">
+                <label for="override-name">Entity Name</label>
+                <input
+                  id="override-name"
+                  type="text"
+                  bind:value={overrideName}
+                  placeholder="e.g. Captain Voss"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="override-action">Action</label>
+                <select id="override-action" bind:value={overrideAction}>
+                  <option value="suppress">Suppress</option>
+                  <option value="merge">Merge Alias</option>
+                </select>
+              </div>
+              {#if overrideAction === 'merge'}
+                <div class="field">
+                  <label for="override-target">Merge Into</label>
+                  <input
+                    id="override-target"
+                    type="text"
+                    bind:value={overrideTarget}
+                    placeholder="Canonical name"
+                    required
+                  />
+                </div>
+              {/if}
+              <div class="field">
+                <label for="override-scope">Scope</label>
+                <select id="override-scope" bind:value={overrideScope}>
+                  <option value="story">This Story</option>
+                  <option value="global">All Stories</option>
+                </select>
+              </div>
+              <div class="field notes">
+                <label for="override-notes">Notes</label>
+                <textarea
+                  id="override-notes"
+                  bind:value={overrideNotes}
+                  rows="1"
+                  placeholder="Optional context or reasoning"
+                ></textarea>
+              </div>
+              <div class="field action">
+                <button type="submit" class="override-submit" disabled={overrideSaving}>
+                  {overrideSaving ? 'Saving…' : 'Save Override'}
+                </button>
+              </div>
+            </form>
+            {#if overrideError}
+              <p class="override-error">{overrideError}</p>
+            {/if}
+
+            {#if overrides.length}
+              <ul class="override-list">
+                {#each overrides as item (item.id)}
+                  <li class="override-item">
+                    <div class="override-info">
+                      <div class="override-heading">
+                        <span class={`scope-badge ${item.scope}`}>
+                          {item.scope === 'global' ? 'Global' : 'Story'}
+                        </span>
+                        <strong>{item.name}</strong>
+                        <span class="override-action">{item.action}</span>
+                        {#if item.action === 'merge' && item.target_name}
+                          <span class="merge-target">→ {item.target_name}</span>
+                        {/if}
+                      </div>
+                      {#if item.notes}
+                        <p class="override-notes">{item.notes}</p>
+                      {/if}
+                      <div class="override-meta">
+                        Updated {formatTimestamp(item.updated_at)}
+                      </div>
+                    </div>
+                    <button
+                      class="override-remove"
+                      on:click|preventDefault={() => removeOverride(item.id)}
+                      disabled={removingOverrides[item.id]}
+                    >
+                      {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="universe-empty">No manual overrides for this story yet.</p>
+            {/if}
+          </div>
+        </aside>
+      {/if}
+
       <aside class="chaos-params">
         <h3>Chaos Parameters</h3>
         <div class="param">
@@ -386,6 +637,138 @@
     flex-direction: column;
     gap: 1rem;
     align-items: stretch;
+  }
+
+  .universe-panel {
+    background: rgba(15, 23, 42, 0.7);
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .universe-panel h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #38bdf8;
+  }
+
+  .universe-cluster {
+    background: rgba(56, 189, 248, 0.1);
+    border-radius: 14px;
+    padding: 1rem;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .cluster-label {
+    font-weight: 600;
+    color: #f97316;
+  }
+
+  .universe-panel .cluster-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+    opacity: 0.8;
+  }
+
+  .universe-panel .cluster-meta strong {
+    color: #38bdf8;
+    margin-right: 0.25rem;
+  }
+
+  .related-block ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .related-block a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    background: rgba(2, 6, 23, 0.5);
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .related-block a:hover {
+    border-color: rgba(56, 189, 248, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .related-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .related-heading strong {
+    color: #f1f5f9;
+  }
+
+  .related-weight {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  .shared-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .shared-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.65;
+  }
+
+  .shared-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .chip {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  .chip.more {
+    background: rgba(15, 23, 42, 0.8);
+    border-style: dashed;
+  }
+
+  .universe-empty {
+    margin: 0;
+    font-size: 0.85rem;
+    opacity: 0.75;
+    background: rgba(2, 6, 23, 0.5);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    border: 1px dashed rgba(148, 163, 184, 0.3);
   }
 
   .story-header h1 {
@@ -823,4 +1206,180 @@
       width: 100%;
     }
   }
+
+  .override-block {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .override-block h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #f97316;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .override-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: end;
+  }
+
+  .override-form .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .override-form label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  .override-form input,
+  .override-form select,
+  .override-form textarea {
+    background: rgba(2, 6, 23, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    padding: 0.6rem 0.75rem;
+    color: inherit;
+    font-size: 0.9rem;
+  }
+
+  .override-form textarea {
+    resize: vertical;
+    min-height: 2.5rem;
+  }
+
+  .override-form .notes {
+    grid-column: 1 / -1;
+  }
+
+  .override-form .action {
+    grid-column: 1 / -1;
+  }
+
+  .override-submit {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+    padding: 0.6rem 1.5rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-weight: 600;
+    align-self: flex-start;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+
+  .override-submit:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
+  .override-submit:not(:disabled):hover {
+    transform: translateY(-1px);
+    border-color: rgba(56, 189, 248, 0.7);
+  }
+
+  .override-error {
+    margin: 0;
+    color: #f87171;
+    font-size: 0.85rem;
+  }
+
+  .override-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .override-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(2, 6, 23, 0.5);
+  }
+
+  .override-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .scope-badge {
+    border-radius: 999px;
+    padding: 0.15rem 0.65rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+  }
+
+  .scope-badge.global {
+    border-color: rgba(249, 115, 22, 0.5);
+    color: #fb923c;
+  }
+
+  .scope-badge.story {
+    border-color: rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+  }
+
+  .override-action {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  .merge-target {
+    color: #38bdf8;
+    font-weight: 600;
+  }
+
+  .override-notes {
+    margin: 0 0 0.5rem;
+    opacity: 0.8;
+    line-height: 1.4;
+  }
+
+  .override-meta {
+    font-size: 0.75rem;
+    opacity: 0.6;
+  }
+
+  .override-remove {
+    background: transparent;
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    color: #f87171;
+    border-radius: 12px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+  }
+
+  .override-remove:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
+
 </style>
