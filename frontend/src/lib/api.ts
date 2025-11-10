@@ -165,6 +165,10 @@ export function getUniverseMetrics(): Promise<any> {
   return request('/api/universe/metrics');
 }
 
+export function getStoryRecommendations(): Promise<any> {
+  return request('/api/recommendations');
+}
+
 export type EntityOverridePayload = {
   story_id?: string | null;
   name: string;

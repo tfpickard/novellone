@@ -19,6 +19,11 @@
       isActive: (path) => path === '/' || path.startsWith('/story')
     },
     {
+      href: '/recommended',
+      label: 'Recommended',
+      isActive: (path) => path.startsWith('/recommended')
+    },
+    {
       href: '/stats',
       label: 'Stats',
       isActive: (path) => path.startsWith('/stats')
