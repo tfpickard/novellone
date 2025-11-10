@@ -102,14 +102,14 @@ def apply_overrides_to_entities(
             if existing_aliases:
                 existing.aliases = sorted(existing_aliases)
 
-            existing_metadata = existing.metadata or {}
-            entity_metadata = entity.metadata or {}
+            existing_metadata = existing.metadata_json or {}
+            entity_metadata = entity.metadata_json or {}
             existing_chapters = set(existing_metadata.get("supporting_chapters", []))
             entity_chapters = set(entity_metadata.get("supporting_chapters", []))
             combined = sorted(existing_chapters | entity_chapters)
             if combined:
                 existing_metadata["supporting_chapters"] = combined
-                existing.metadata = existing_metadata
+                existing.metadata_json = existing_metadata
         else:
             if alias_set:
                 entity.aliases = sorted(alias_set)
@@ -236,7 +236,7 @@ class EntityExtractionService:
                     first_seen_chapter=first_seen,
                     last_seen_chapter=last_seen,
                     occurrence_count=occurrences,
-                    metadata={
+                    metadata_json={
                         "supporting_chapters": chapters,
                     },
                     updated_at=datetime.utcnow(),
@@ -261,7 +261,7 @@ class EntityExtractionService:
                     weight=1.0,
                     confidence=0.6,
                     source="story.theme_json",
-                    metadata={"rank": idx},
+                    metadata_json={"rank": idx},
                     updated_at=datetime.utcnow(),
                 )
             )
@@ -275,7 +275,7 @@ class EntityExtractionService:
                     weight=max(0.3, 1.0 - 0.05 * (idx - 1)),
                     confidence=0.45,
                     source="keyword",
-                    metadata={"rank": idx},
+                    metadata_json={"rank": idx},
                     updated_at=datetime.utcnow(),
                 )
             )

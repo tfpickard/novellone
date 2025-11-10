@@ -150,7 +150,7 @@ class UniverseGraphService:
                     weight=data["weight"],
                     shared_entities=data.get("shared_entities"),
                     shared_themes=data.get("shared_themes"),
-                    metadata={
+                    metadata_json={
                         "entity_count": len(data.get("shared_entities") or []),
                         "theme_count": len(data.get("shared_themes") or []),
                     },
@@ -190,7 +190,7 @@ class UniverseGraphService:
                     label=f"Cluster {index}",
                     size=len(nodes),
                     cohesion=cohesion,
-                    metadata=metadata,
+                    metadata_json=metadata,
                     updated_at=now,
                 )
             )
@@ -202,7 +202,9 @@ class UniverseGraphService:
                         story_id=story_id,
                         cluster_id=cluster_id,
                         weight=weight,
-                        metadata={"related_stories": list(adjacency[story_id].keys())},
+                        metadata_json={
+                            "related_stories": list(adjacency[story_id].keys())
+                        },
                         updated_at=now,
                     )
                 )

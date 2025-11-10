@@ -203,7 +203,7 @@ class MetaAnalysisRunRead(BaseModel):
             finished_at=run.finished_at,
             duration_ms=float(run.duration_ms or 0.0),
             processed_items=int(run.processed_items or 0),
-            metadata=run.metadata or {},
+            metadata=run.metadata_json or {},
             error_message=run.error_message,
         )
 
@@ -751,8 +751,8 @@ async def get_universe_overview(session: SessionDep) -> dict[str, Any]:
             label=row.label,
             size=row.size,
             cohesion=row.cohesion,
-            top_entities=(row.metadata or {}).get("top_entities", []),
-            top_themes=(row.metadata or {}).get("top_themes", []),
+            top_entities=(row.metadata_json or {}).get("top_entities", []),
+            top_themes=(row.metadata_json or {}).get("top_themes", []),
         ).model_dump()
         for row in cluster_rows
     ]

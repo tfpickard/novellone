@@ -94,7 +94,9 @@ class StoryEntity(Base):
     first_seen_chapter: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_seen_chapter: Mapped[int | None] = mapped_column(Integer, nullable=True)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     story: Mapped[Story] = relationship(backref="entities")
@@ -110,7 +112,9 @@ class StoryTheme(Base):
     weight: Mapped[float] = mapped_column(Float, default=1.0)
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     story: Mapped[Story] = relationship(backref="derived_themes")
@@ -147,7 +151,9 @@ class StoryUniverseLink(Base):
     weight: Mapped[float] = mapped_column(Float, default=0.0)
     shared_entities: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     shared_themes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -158,7 +164,9 @@ class UniverseCluster(Base):
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     size: Mapped[int] = mapped_column(Integer, default=0)
     cohesion: Mapped[float] = mapped_column(Float, default=0.0)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -170,7 +178,9 @@ class UniverseClusterMembership(Base):
     )
     cluster_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("universe_clusters.id", ondelete="CASCADE"))
     weight: Mapped[float] = mapped_column(Float, default=0.0)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     cluster: Mapped[UniverseCluster] = relationship(backref="members")
@@ -187,7 +197,9 @@ class MetaAnalysisRun(Base):
     finished_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     duration_ms: Mapped[float] = mapped_column(Float, default=0.0)
     processed_items: Mapped[int] = mapped_column(Integer, default=0)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

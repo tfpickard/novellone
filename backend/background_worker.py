@@ -401,7 +401,7 @@ class BackgroundWorker:
                 finished_at=result.finished_at,
                 duration_ms=result.duration_ms,
                 processed_items=processed,
-                metadata=metadata,
+                metadata_json=metadata,
                 error_message=error,
             )
         )

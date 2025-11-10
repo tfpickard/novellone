@@ -47,7 +47,7 @@ def _entity(name: str, occurrence: int, story_id: uuid.UUID | None = None) -> Si
         first_seen_chapter=1,
         last_seen_chapter=3,
         occurrence_count=occurrence,
-        metadata={"supporting_chapters": [1, 2, 3]},
+        metadata_json={"supporting_chapters": [1, 2, 3]},
         updated_at=datetime.utcnow(),
     )
 
@@ -70,7 +70,7 @@ def test_apply_overrides_merges_and_suppresses() -> None:
     assert merged.occurrence_count == 5
     assert merged.aliases and "Voss" in merged.aliases and "Captain Voss" in merged.aliases
     assert "Background Specter" not in {entity.name for entity in result}
-    assert set(merged.metadata.get("supporting_chapters", [])) == {1, 2, 3}
+    assert set(merged.metadata_json.get("supporting_chapters", [])) == {1, 2, 3}
 
 
 def test_apply_overrides_without_rules_returns_original() -> None:
