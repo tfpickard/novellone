@@ -264,18 +264,22 @@ class EntityExtractionService:
             normalised = name.strip()
             if not normalised:
                 return
-            key = normalised.casefold()
+            truncated = normalised[:255]
+            key = truncated.casefold()
             if key in seen:
                 return
             seen.add(key)
+            metadata: dict[str, object] = {"rank": rank}
+            if len(normalised) > 255:
+                metadata["original_name"] = normalised
             themes.append(
                 StoryTheme(
                     story_id=story.id,
-                    name=normalised,
+                    name=truncated,
                     weight=weight,
                     confidence=confidence,
                     source=source,
-                    metadata_json={"rank": rank},
+                    metadata_json=metadata,
                     updated_at=datetime.utcnow(),
                 )
             )
