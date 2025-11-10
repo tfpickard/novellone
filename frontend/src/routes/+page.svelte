@@ -602,16 +602,6 @@
       align-items: stretch;
     }
 
-    .actions {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .spawn-button,
-    .reset-button {
-      width: 100%;
-    }
-
     .stats,
     .cover-scroll,
     .listing-controls {

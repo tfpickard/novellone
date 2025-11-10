@@ -173,6 +173,187 @@
       {/each}
     </ul>
   </section>
+
+  {#if data.universe}
+    <section class="universe-intel">
+      <div class="section-heading">
+        <h2>Shared Universe Intelligence</h2>
+        <p>Automatically detected clusters, recurring characters, and dominant motifs.</p>
+      </div>
+
+      {#if data.universe.clusters.length > 0}
+        <div class="cluster-grid">
+          {#each data.universe.clusters as cluster}
+            <article class="cluster-card">
+              <header>
+                <h3>{cluster.label ?? 'Untitled Cluster'}</h3>
+                <div class="cluster-meta">
+                  <span><strong>{cluster.size}</strong> stories</span>
+                  <span>Cohesion <strong>{formatCohesion(cluster.cohesion)}</strong></span>
+                </div>
+              </header>
+              {#if cluster.top_entities.length > 0}
+                <div class="cluster-section">
+                  <h4>Key Characters</h4>
+                  <div class="chip-row">
+                    {#each cluster.top_entities as entity}
+                      <span class="chip">{entity}</span>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+              {#if cluster.top_themes.length > 0}
+                <div class="cluster-section">
+                  <h4>Shared Motifs</h4>
+                  <div class="chip-row">
+                    {#each cluster.top_themes as theme}
+                      <span class="chip">{theme}</span>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </article>
+          {/each}
+        </div>
+      {:else}
+        <p class="empty-state">No continuity clusters detected yet. Trigger a meta-analysis run once stories accumulate.</p>
+      {/if}
+
+      <div class="universe-aggregates">
+        <div class="aggregate-card">
+          <h3>Most Referenced Characters</h3>
+          {#if data.universe.top_entities.length > 0}
+            <ol>
+              {#each data.universe.top_entities as entity}
+                <li>
+                  <div>
+                    <strong>{entity.name}</strong>
+                    <span>{entity.story_count} stories</span>
+                  </div>
+                  <span class="count">{entity.total_occurrences.toLocaleString()} mentions</span>
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <p class="empty-state">No recurring characters catalogued yet.</p>
+          {/if}
+        </div>
+        <div class="aggregate-card">
+          <h3>Dominant Themes</h3>
+          {#if data.universe.top_themes.length > 0}
+            <ol>
+              {#each data.universe.top_themes as theme}
+                <li>
+                  <div>
+                    <strong>{theme.name}</strong>
+                  </div>
+                  <span class="count">{theme.story_count} stories</span>
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <p class="empty-state">No shared motifs detected yet.</p>
+          {/if}
+        </div>
+      </div>
+    </section>
+  {/if}
+
+  <section class="meta-ops">
+    <div class="section-heading">
+      <h2>Meta-analysis Operations</h2>
+      <p>Track extraction jobs, inspect metrics, and trigger manual refreshes.</p>
+    </div>
+
+    <div class="meta-actions">
+      <button class="refresh-button" disabled={refreshPending} on:click={triggerFullRefresh}>
+        {refreshPending ? 'Queuing…' : 'Queue Full Refresh'}
+      </button>
+      {#if refreshMessage}
+        <span class="meta-status success">{refreshMessage}</span>
+      {:else if refreshError}
+        <span class="meta-status error">{refreshError}</span>
+      {/if}
+    </div>
+
+    <div class="meta-runtime">
+      <div>
+        <span>Last continuity rebuild</span>
+        <strong>{formatDate(metaRuntime.last_universe_refresh)}</strong>
+      </div>
+      <div>
+        <span>Last full reanalysis</span>
+        <strong>{formatDate(metaRuntime.last_full_refresh)}</strong>
+      </div>
+    </div>
+
+    {#if summaryEntries.length}
+      <div class="meta-summary-grid">
+        {#each summaryEntries as [runType, info]}
+          <article class="meta-summary-card">
+            <header>
+              <h3>{runType.replace('_', ' ')}</h3>
+              <span class="meta-count">{info.total_runs} runs</span>
+            </header>
+            <dl>
+              <div>
+                <dt>Success Rate</dt>
+                <dd>{formatPercent(info.success_rate)}</dd>
+              </div>
+              <div>
+                <dt>Average Duration</dt>
+                <dd>{formatDuration(info.avg_duration_ms)}</dd>
+              </div>
+              <div>
+                <dt>Latest Status</dt>
+                <dd>{info.latest_status}</dd>
+              </div>
+              <div>
+                <dt>Last Finished</dt>
+                <dd>{formatDate(info.latest_finished_at)}</dd>
+              </div>
+            </dl>
+          </article>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="meta-runs">
+      <h3>Recent Runs</h3>
+      {#if metaRuns.length}
+        <div class="meta-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Processed</th>
+                <th>Duration</th>
+                <th>Finished</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each metaRuns as run}
+                <tr>
+                  <td class="meta-run-type">{run.run_type.replace('_', ' ')}</td>
+                  <td>
+                    <span class={`status-chip ${run.status}`}>
+                      {run.status}
+                    </span>
+                  </td>
+                  <td>{run.processed_items.toLocaleString()}</td>
+                  <td>{formatDuration(run.duration_ms)}</td>
+                  <td>{formatDate(run.finished_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty-state">No meta-analysis runs have been recorded yet.</p>
+      {/if}
+    </div>
+  </section>
 </div>
 
 <style>
@@ -689,183 +870,3 @@
     opacity: 0.75;
   }
 </style>
-  {#if data.universe}
-    <section class="universe-intel">
-      <div class="section-heading">
-        <h2>Shared Universe Intelligence</h2>
-        <p>Automatically detected clusters, recurring characters, and dominant motifs.</p>
-      </div>
-
-      {#if data.universe.clusters.length > 0}
-        <div class="cluster-grid">
-          {#each data.universe.clusters as cluster}
-            <article class="cluster-card">
-              <header>
-                <h3>{cluster.label ?? 'Untitled Cluster'}</h3>
-                <div class="cluster-meta">
-                  <span><strong>{cluster.size}</strong> stories</span>
-                  <span>Cohesion <strong>{formatCohesion(cluster.cohesion)}</strong></span>
-                </div>
-              </header>
-              {#if cluster.top_entities.length > 0}
-                <div class="cluster-section">
-                  <h4>Key Characters</h4>
-                  <div class="chip-row">
-                    {#each cluster.top_entities as entity}
-                      <span class="chip">{entity}</span>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-              {#if cluster.top_themes.length > 0}
-                <div class="cluster-section">
-                  <h4>Shared Motifs</h4>
-                  <div class="chip-row">
-                    {#each cluster.top_themes as theme}
-                      <span class="chip">{theme}</span>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-            </article>
-          {/each}
-        </div>
-      {:else}
-        <p class="empty-state">No continuity clusters detected yet. Trigger a meta-analysis run once stories accumulate.</p>
-      {/if}
-
-      <div class="universe-aggregates">
-        <div class="aggregate-card">
-          <h3>Most Referenced Characters</h3>
-          {#if data.universe.top_entities.length > 0}
-            <ol>
-              {#each data.universe.top_entities as entity}
-                <li>
-                  <div>
-                    <strong>{entity.name}</strong>
-                    <span>{entity.story_count} stories</span>
-                  </div>
-                  <span class="count">{entity.total_occurrences.toLocaleString()} mentions</span>
-                </li>
-              {/each}
-            </ol>
-          {:else}
-            <p class="empty-state">No recurring characters catalogued yet.</p>
-          {/if}
-        </div>
-        <div class="aggregate-card">
-          <h3>Dominant Themes</h3>
-          {#if data.universe.top_themes.length > 0}
-            <ol>
-              {#each data.universe.top_themes as theme}
-                <li>
-                  <div>
-                    <strong>{theme.name}</strong>
-                  </div>
-                  <span class="count">{theme.story_count} stories</span>
-                </li>
-              {/each}
-            </ol>
-          {:else}
-            <p class="empty-state">No shared motifs detected yet.</p>
-          {/if}
-        </div>
-      </div>
-    </section>
-  {/if}
-  <section class="meta-ops">
-    <div class="section-heading">
-      <h2>Meta-analysis Operations</h2>
-      <p>Track extraction jobs, inspect metrics, and trigger manual refreshes.</p>
-    </div>
-
-    <div class="meta-actions">
-      <button class="refresh-button" disabled={refreshPending} on:click={triggerFullRefresh}>
-        {refreshPending ? 'Queuing…' : 'Queue Full Refresh'}
-      </button>
-      {#if refreshMessage}
-        <span class="meta-status success">{refreshMessage}</span>
-      {:else if refreshError}
-        <span class="meta-status error">{refreshError}</span>
-      {/if}
-    </div>
-
-    <div class="meta-runtime">
-      <div>
-        <span>Last continuity rebuild</span>
-        <strong>{formatDate(metaRuntime.last_universe_refresh)}</strong>
-      </div>
-      <div>
-        <span>Last full reanalysis</span>
-        <strong>{formatDate(metaRuntime.last_full_refresh)}</strong>
-      </div>
-    </div>
-
-    {#if summaryEntries.length}
-      <div class="meta-summary-grid">
-        {#each summaryEntries as [runType, info]}
-          <article class="meta-summary-card">
-            <header>
-              <h3>{runType.replace('_', ' ')}</h3>
-              <span class="meta-count">{info.total_runs} runs</span>
-            </header>
-            <dl>
-              <div>
-                <dt>Success Rate</dt>
-                <dd>{formatPercent(info.success_rate)}</dd>
-              </div>
-              <div>
-                <dt>Average Duration</dt>
-                <dd>{formatDuration(info.avg_duration_ms)}</dd>
-              </div>
-              <div>
-                <dt>Latest Status</dt>
-                <dd>{info.latest_status}</dd>
-              </div>
-              <div>
-                <dt>Last Finished</dt>
-                <dd>{formatDate(info.latest_finished_at)}</dd>
-              </div>
-            </dl>
-          </article>
-        {/each}
-      </div>
-    {/if}
-
-    <div class="meta-runs">
-      <h3>Recent Runs</h3>
-      {#if metaRuns.length}
-        <div class="meta-table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Status</th>
-                <th>Processed</th>
-                <th>Duration</th>
-                <th>Finished</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each metaRuns as run}
-                <tr>
-                  <td class="meta-run-type">{run.run_type.replace('_', ' ')}</td>
-                  <td>
-                    <span class={`status-chip ${run.status}`}>
-                      {run.status}
-                    </span>
-                  </td>
-                  <td>{run.processed_items.toLocaleString()}</td>
-                  <td>{formatDuration(run.duration_ms)}</td>
-                  <td>{formatDate(run.finished_at)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <p class="empty-state">No meta-analysis runs have been recorded yet.</p>
-      {/if}
-    </div>
-  </section>
-</div>
