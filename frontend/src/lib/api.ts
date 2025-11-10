@@ -153,6 +153,10 @@ export function getStats(): Promise<any> {
   return request('/api/stats');
 }
 
+export function getUniverseOverview(): Promise<any> {
+  return request('/api/universe/overview');
+}
+
 export function getConfig(): Promise<RuntimeConfig> {
   return request('/api/config');
 }

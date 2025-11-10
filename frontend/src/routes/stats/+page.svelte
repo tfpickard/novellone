@@ -14,6 +14,9 @@
     }
     return `${normalised.slice(0, limit - 1).trimEnd()}…`;
   };
+
+  const formatCohesion = (value: number | null | undefined) =>
+    typeof value === 'number' ? value.toFixed(2) : '0.00';
 </script>
 
 <div class="page-container stats-page">
@@ -309,4 +312,230 @@
     font-size: 1.75rem;
     color: #38bdf8;
   }
+
+  .universe-intel {
+    margin-bottom: 3rem;
+  }
+
+  .section-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .section-heading h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.5rem;
+    color: #38bdf8;
+    margin: 0;
+  }
+
+  .section-heading p {
+    margin: 0;
+    opacity: 0.7;
+  }
+
+  .cluster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .cluster-card {
+    background: rgba(15, 23, 42, 0.7);
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .cluster-card header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .cluster-card h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #f97316;
+  }
+
+  .cluster-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+    opacity: 0.8;
+  }
+
+  .cluster-meta strong {
+    color: #38bdf8;
+    margin: 0 0.25rem 0 0;
+  }
+
+  .cluster-section h4 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+    margin: 0 0 0.5rem;
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .chip {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .universe-aggregates {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .aggregate-card {
+    background: rgba(15, 23, 42, 0.7);
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 1.5rem;
+  }
+
+  .aggregate-card h3 {
+    margin: 0 0 1rem;
+    font-size: 1.1rem;
+    color: #f97316;
+  }
+
+  .aggregate-card ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .aggregate-card li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .aggregate-card li strong {
+    color: #38bdf8;
+  }
+
+  .aggregate-card .count {
+    opacity: 0.7;
+    font-size: 0.8rem;
+  }
+
+  .empty-state {
+    margin: 0;
+    padding: 1.5rem;
+    border-radius: 18px;
+    border: 1px dashed rgba(148, 163, 184, 0.4);
+    background: rgba(15, 23, 42, 0.5);
+    text-align: center;
+    font-size: 0.9rem;
+    opacity: 0.75;
+  }
 </style>
+  {#if data.universe}
+    <section class="universe-intel">
+      <div class="section-heading">
+        <h2>Shared Universe Intelligence</h2>
+        <p>Automatically detected clusters, recurring characters, and dominant motifs.</p>
+      </div>
+
+      {#if data.universe.clusters.length > 0}
+        <div class="cluster-grid">
+          {#each data.universe.clusters as cluster}
+            <article class="cluster-card">
+              <header>
+                <h3>{cluster.label ?? 'Untitled Cluster'}</h3>
+                <div class="cluster-meta">
+                  <span><strong>{cluster.size}</strong> stories</span>
+                  <span>Cohesion <strong>{formatCohesion(cluster.cohesion)}</strong></span>
+                </div>
+              </header>
+              {#if cluster.top_entities.length > 0}
+                <div class="cluster-section">
+                  <h4>Key Characters</h4>
+                  <div class="chip-row">
+                    {#each cluster.top_entities as entity}
+                      <span class="chip">{entity}</span>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+              {#if cluster.top_themes.length > 0}
+                <div class="cluster-section">
+                  <h4>Shared Motifs</h4>
+                  <div class="chip-row">
+                    {#each cluster.top_themes as theme}
+                      <span class="chip">{theme}</span>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </article>
+          {/each}
+        </div>
+      {:else}
+        <p class="empty-state">No continuity clusters detected yet. Trigger a meta-analysis run once stories accumulate.</p>
+      {/if}
+
+      <div class="universe-aggregates">
+        <div class="aggregate-card">
+          <h3>Most Referenced Characters</h3>
+          {#if data.universe.top_entities.length > 0}
+            <ol>
+              {#each data.universe.top_entities as entity}
+                <li>
+                  <div>
+                    <strong>{entity.name}</strong>
+                    <span>{entity.story_count} stories</span>
+                  </div>
+                  <span class="count">{entity.total_occurrences.toLocaleString()} mentions</span>
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <p class="empty-state">No recurring characters catalogued yet.</p>
+          {/if}
+        </div>
+        <div class="aggregate-card">
+          <h3>Dominant Themes</h3>
+          {#if data.universe.top_themes.length > 0}
+            <ol>
+              {#each data.universe.top_themes as theme}
+                <li>
+                  <div>
+                    <strong>{theme.name}</strong>
+                  </div>
+                  <span class="count">{theme.story_count} stories</span>
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <p class="empty-state">No shared motifs detected yet.</p>
+          {/if}
+        </div>
+      </div>
+    </section>
+  {/if}

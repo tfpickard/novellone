@@ -27,11 +27,22 @@
   const pendingChapterIds: Set<string> = new Set();
 
   let theme = story.theme_json as StoryTheme;
+  let universe = story.universe;
   $: theme = story.theme_json as StoryTheme;
+  $: universe = story.universe;
   $: if (container && theme) {
     applyStoryTheme(theme, container);
   }
   $: premiseHtml = renderMarkdown(story.premise);
+
+  const hasUniverseContext = (context: any) => {
+    if (!context) return false;
+    const relatedCount = context.related_stories?.length ?? 0;
+    return Boolean(context.cluster_id || relatedCount > 0);
+  };
+
+  const formatCohesion = (value: number | null | undefined) =>
+    typeof value === 'number' ? value.toFixed(2) : '0.00';
 
   async function handleSocket(message: StorySocketMessage) {
     if (message.type === 'system_reset') {
@@ -213,7 +224,68 @@
           </div>
         {/if}
       </aside>
-      
+
+      {#if hasUniverseContext(universe)}
+        <aside class="universe-panel">
+          <h3>Shared Universe</h3>
+          {#if universe?.cluster_id}
+            <div class="universe-cluster">
+              <div class="cluster-label">{universe?.cluster_label ?? 'Continuity Cluster'}</div>
+              <div class="cluster-meta">
+                <span><strong>{universe?.cluster_size ?? 0}</strong> stories linked</span>
+                <span>Cohesion <strong>{formatCohesion(universe?.cohesion)}</strong></span>
+              </div>
+            </div>
+          {/if}
+
+          {#if universe?.related_stories?.length}
+            <div class="related-block">
+              <h4>Intersecting Stories</h4>
+              <ul>
+                {#each universe.related_stories as related}
+                  <li>
+                    <a href={`/story/${related.story_id}`}>
+                      <div class="related-heading">
+                        <strong>{related.title || 'Untitled Story'}</strong>
+                        <span class="related-weight">Affinity {formatCohesion(related.weight)}</span>
+                      </div>
+                      {#if related.shared_entities?.length}
+                        <div class="shared-row">
+                          <span class="shared-label">Characters</span>
+                          <div class="shared-chips">
+                            {#each related.shared_entities.slice(0, 4) as entity}
+                              <span class="chip">{entity}</span>
+                            {/each}
+                            {#if related.shared_entities.length > 4}
+                              <span class="chip more">+{related.shared_entities.length - 4}</span>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+                      {#if related.shared_themes?.length}
+                        <div class="shared-row">
+                          <span class="shared-label">Motifs</span>
+                          <div class="shared-chips">
+                            {#each related.shared_themes.slice(0, 4) as theme}
+                              <span class="chip">{theme}</span>
+                            {/each}
+                            {#if related.shared_themes.length > 4}
+                              <span class="chip more">+{related.shared_themes.length - 4}</span>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {:else if universe?.cluster_id}
+            <p class="universe-empty">This story shares a continuity thread, but no direct crossovers have surfaced yet.</p>
+          {/if}
+        </aside>
+      {/if}
+
       <aside class="chaos-params">
         <h3>Chaos Parameters</h3>
         <div class="param">
@@ -386,6 +458,138 @@
     flex-direction: column;
     gap: 1rem;
     align-items: stretch;
+  }
+
+  .universe-panel {
+    background: rgba(15, 23, 42, 0.7);
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .universe-panel h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #38bdf8;
+  }
+
+  .universe-cluster {
+    background: rgba(56, 189, 248, 0.1);
+    border-radius: 14px;
+    padding: 1rem;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .cluster-label {
+    font-weight: 600;
+    color: #f97316;
+  }
+
+  .universe-panel .cluster-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+    opacity: 0.8;
+  }
+
+  .universe-panel .cluster-meta strong {
+    color: #38bdf8;
+    margin-right: 0.25rem;
+  }
+
+  .related-block ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .related-block a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    background: rgba(2, 6, 23, 0.5);
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .related-block a:hover {
+    border-color: rgba(56, 189, 248, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .related-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .related-heading strong {
+    color: #f1f5f9;
+  }
+
+  .related-weight {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  .shared-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .shared-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.65;
+  }
+
+  .shared-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .chip {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  .chip.more {
+    background: rgba(15, 23, 42, 0.8);
+    border-style: dashed;
+  }
+
+  .universe-empty {
+    margin: 0;
+    font-size: 0.85rem;
+    opacity: 0.75;
+    background: rgba(2, 6, 23, 0.5);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    border: 1px dashed rgba(148, 163, 184, 0.3);
   }
 
   .story-header h1 {
