@@ -36,6 +36,25 @@ VISUAL_THEME_KEYS = {
     "shadow_style",
     "animation_speed",
 }
+
+VISUAL_TOKEN_KEYWORDS = {
+    "accent",
+    "animation",
+    "background",
+    "border",
+    "body",
+    "card",
+    "color",
+    "font",
+    "heading",
+    "primary",
+    "radius",
+    "secondary",
+    "shadow",
+    "speed",
+    "style",
+    "text",
+}
 ENTITY_STOPWORDS = {
     "The",
     "A",
@@ -374,6 +393,14 @@ class EntityExtractionService:
                 ch.isdigit() for ch in candidate
             ):
                 return False
+            if lowered in VISUAL_THEME_KEYS:
+                return False
+            if lowered in {"mood", "aesthetic", "style", "theme", "themes"}:
+                return False
+            if "_" in lowered or "-" in lowered:
+                segments = re.split(r"[_\-\s]+", lowered)
+                if segments and all(segment in VISUAL_TOKEN_KEYWORDS for segment in segments):
+                    return False
             if not any(ch.isalpha() for ch in candidate):
                 return False
             return True
@@ -381,33 +408,33 @@ class EntityExtractionService:
         if not theme_json:
             return []
 
-        if isinstance(theme_json, list):
-            values: list[str] = []
-            for item in theme_json:
-                candidate = str(item).strip()
+        def iter_values(payload: object) -> list[str]:
+            collected: list[str] = []
+            if isinstance(payload, dict):
+                for key, value in payload.items():
+                    key_lower = str(key).strip().lower()
+                    if key_lower in VISUAL_THEME_KEYS:
+                        continue
+                    collected.extend(iter_values(value))
+                return collected
+            if isinstance(payload, (list, tuple, set)):
+                for item in payload:
+                    collected.extend(iter_values(item))
+                return collected
+            if isinstance(payload, str):
+                candidate = payload.strip()
                 if should_keep(candidate):
-                    values.append(candidate)
-            return values
+                    collected.append(candidate)
+                return collected
+            if payload is None:
+                return collected
 
-        if isinstance(theme_json, dict):
-            values: list[str] = []
-            for key, value in theme_json.items():
-                key_lower = str(key).strip().lower()
-                if key_lower in VISUAL_THEME_KEYS:
-                    continue
-                if isinstance(value, (list, tuple, set)):
-                    for item in value:
-                        candidate = str(item).strip()
-                        if should_keep(candidate):
-                            values.append(candidate)
-                elif isinstance(value, str):
-                    candidate = value.strip()
-                    if should_keep(candidate):
-                        values.append(candidate)
-            return values
+            candidate = str(payload).strip()
+            if should_keep(candidate):
+                collected.append(candidate)
+            return collected
 
-        candidate = str(theme_json).strip()
-        return [candidate] if should_keep(candidate) else []
+        return iter_values(theme_json)
 
     def _extract_keywords(self, corpus: StoryCorpusSnapshot) -> list[str]:
         text_blobs: list[str] = []
