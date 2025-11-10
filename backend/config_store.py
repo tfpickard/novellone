@@ -28,6 +28,10 @@ class RuntimeConfig:
     premise_prompt_refresh_interval: int
     premise_prompt_stats_window: int
     premise_prompt_variation_strength: float
+    chaos_initial_min: float
+    chaos_initial_max: float
+    chaos_increment_min: float
+    chaos_increment_max: float
 
     def as_dict(self) -> dict[str, int | float | str]:
         return {
@@ -47,6 +51,10 @@ class RuntimeConfig:
             "premise_prompt_refresh_interval": self.premise_prompt_refresh_interval,
             "premise_prompt_stats_window": self.premise_prompt_stats_window,
             "premise_prompt_variation_strength": self.premise_prompt_variation_strength,
+            "chaos_initial_min": self.chaos_initial_min,
+            "chaos_initial_max": self.chaos_initial_max,
+            "chaos_increment_min": self.chaos_increment_min,
+            "chaos_increment_max": self.chaos_increment_max,
         }
 
 
@@ -69,6 +77,10 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "premise_prompt_refresh_interval": {"type": int, "min": 1, "max": 200},
     "premise_prompt_stats_window": {"type": int, "min": 1, "max": 200},
     "premise_prompt_variation_strength": {"type": float, "min": 0.0, "max": 1.0},
+    "chaos_initial_min": {"type": float, "min": 0.0, "max": 1.0},
+    "chaos_initial_max": {"type": float, "min": 0.0, "max": 1.0},
+    "chaos_increment_min": {"type": float, "min": 0.0, "max": 1.0},
+    "chaos_increment_max": {"type": float, "min": 0.0, "max": 1.0},
 }
 
 _DEFAULTS: dict[str, int | float | str] = {
@@ -137,6 +149,16 @@ def _validate_updates(
     max_active = cleaned.get("max_active_stories", current.max_active_stories)
     if min_active > max_active:
         raise ValueError("min_active_stories cannot exceed max_active_stories")
+
+    chaos_initial_min = cleaned.get("chaos_initial_min", current.chaos_initial_min)
+    chaos_initial_max = cleaned.get("chaos_initial_max", current.chaos_initial_max)
+    if chaos_initial_min > chaos_initial_max:
+        raise ValueError("chaos_initial_min cannot exceed chaos_initial_max")
+
+    chaos_increment_min = cleaned.get("chaos_increment_min", current.chaos_increment_min)
+    chaos_increment_max = cleaned.get("chaos_increment_max", current.chaos_increment_max)
+    if chaos_increment_min > chaos_increment_max:
+        raise ValueError("chaos_increment_min cannot exceed chaos_increment_max")
 
     return cleaned
 

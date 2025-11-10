@@ -403,6 +403,10 @@ class ConfigUpdate(BaseModel):
     premise_prompt_variation_strength: Annotated[
         float | None, Field(default=None, ge=0.0, le=1.0)
     ] = None
+    chaos_initial_min: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
+    chaos_initial_max: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
+    chaos_increment_min: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
+    chaos_increment_max: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
 
 
 class PromptUpdate(BaseModel):
@@ -1079,7 +1083,7 @@ async def admin_spawn_story(
             logger.info("Terminated oldest story '%s' to make room for new story", oldest_story.title)
     
     # Spawn the new story
-    payload = await spawn_new_story()
+    payload = await spawn_new_story(runtime_config)
     story = Story(
         title=payload["title"],
         premise=payload["premise"],
