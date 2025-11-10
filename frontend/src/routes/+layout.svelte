@@ -268,6 +268,7 @@
         {:else}
           <ul class="search-results">
             {#each searchResults as result}
+              {@const completed = formatCompletedDate(result.completed_at)}
               <li>
                 <button class="search-result" type="button" on:click={() => void openStory(result)}>
                   {#if result.cover_image_url}
@@ -277,7 +278,6 @@
                   {/if}
                   <div class="search-result-details">
                     <span class="search-result-title">{result.title}</span>
-                    {@const completed = formatCompletedDate(result.completed_at)}
                     <span class="search-result-meta">
                       {formatStatus(result.status)}
                       {#if completed}
