@@ -1,12 +1,53 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
+  import { getStories } from '$lib/api';
   import type { PageData } from './$types';
   import { createThemeAction, type StoryTheme } from '$lib/theme';
 
   export let data: PageData;
 
-  const stories = data.stories.items ?? [];
-  type StorySummary = (typeof stories)[number];
+  const initialStories = data.stories.items ?? [];
+  type StorySummary = (typeof initialStories)[number];
+  let stories: StorySummary[] = [...initialStories];
+  let storyIds = new Set(stories.map((story) => story.id));
+  let baseParams = new URLSearchParams(data.initialSearch ?? '');
+  let total = data.stories.total ?? stories.length;
+  let currentPage =
+    data.stories.page ?? Number.parseInt(baseParams.get('page') ?? '1', 10);
+  if (!baseParams.has('page_size')) {
+    const fallbackSize =
+      data.stories.page_size ?? Number.parseInt(baseParams.get('page_size') ?? '20', 10);
+    baseParams.set('page_size', String(fallbackSize));
+  }
+  baseParams.delete('page');
+
+  let loadingMore = false;
+  let loadError: string | null = null;
+  let sentinel: HTMLDivElement | null = null;
+  let observer: IntersectionObserver | null = null;
+  let observerReady = false;
+  $: hasMore = stories.length < total;
+
+  $: if (data) {
+    const freshStories = (data.stories.items ?? []) as StorySummary[];
+    stories = [...freshStories];
+    storyIds = new Set(freshStories.map((story) => story.id));
+    baseParams = new URLSearchParams(data.initialSearch ?? '');
+    currentPage =
+      data.stories.page ?? Number.parseInt(baseParams.get('page') ?? '1', 10);
+    if (!baseParams.has('page_size')) {
+      const fallbackSize =
+        data.stories.page_size ?? Number.parseInt(baseParams.get('page_size') ?? '20', 10);
+      baseParams.set('page_size', String(fallbackSize));
+    }
+    baseParams.delete('page');
+    loadingMore = false;
+    loadError = null;
+    total = data.stories.total ?? freshStories.length;
+    if (observerReady) {
+      setupObserver();
+    }
+  }
 
   let selectedView: 'all' | 'active' | 'completed' | 'featured' = 'all';
   let sortMode: 'latest' | 'oldest' | 'chapters' = 'latest';
@@ -79,7 +120,94 @@
 
   $: displayStories = [...filteredStories].sort(sortComparator);
 
+  function disconnectObserver(): void {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+  }
+
+  function setupObserver(): void {
+    if (!observerReady || !hasMore || !sentinel || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+    disconnectObserver();
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMore();
+        }
+      },
+      {
+        rootMargin: '200px 0px'
+      }
+    );
+    observer.observe(sentinel);
+  }
+
+  async function loadMore(): Promise<void> {
+    if (loadingMore || !hasMore) {
+      return;
+    }
+    loadingMore = true;
+    loadError = null;
+
+    try {
+      const params = new URLSearchParams(baseParams);
+      params.set('page', String(currentPage + 1));
+      const nextPage = await getStories(params);
+
+      const incomingItems = (nextPage.items ?? []) as StorySummary[];
+      currentPage = nextPage.page ?? currentPage + 1;
+      total = nextPage.total ?? total;
+
+      const uniqueItems = incomingItems.filter((item) => {
+        if (storyIds.has(item.id)) {
+          return false;
+        }
+        storyIds.add(item.id);
+        return true;
+      });
+
+      if (uniqueItems.length > 0) {
+        stories = [...stories, ...uniqueItems];
+      }
+
+      if (uniqueItems.length === 0 && incomingItems.length === 0) {
+        total = stories.length;
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        loadError = error.message;
+      } else {
+        loadError = 'Failed to load more stories.';
+      }
+    } finally {
+      loadingMore = false;
+
+      if (loadError) {
+        disconnectObserver();
+      } else if (hasMore) {
+        setupObserver();
+      } else {
+        disconnectObserver();
+      }
+    }
+  }
+
+  $: if (observerReady && sentinel) {
+    setupObserver();
+  }
+
+  onMount(() => {
+    observerReady = true;
+    setupObserver();
+    return () => {
+      disconnectObserver();
+    };
+  });
 </script>
+
 
 <div class="page-container">
   <header class="hero">
@@ -99,7 +227,7 @@
         </div>
         <div>
           <span>Total</span>
-          <strong>{data.stories.total ?? stories.length}</strong>
+          <strong>{total}</strong>
         </div>
       </div>
     </div>
@@ -139,7 +267,7 @@
         type="button"
         aria-pressed={selectedView === 'all'}
       >
-        All <span>{stories.length}</span>
+        All <span>{total}</span>
       </button>
       <button
         class:selected={selectedView === 'active'}
@@ -216,6 +344,43 @@
       {/each}
     {/if}
   </section>
+
+  <div class="load-more-section" aria-live="polite">
+    {#if loadError}
+      <div class="load-message error" role="alert">
+        <p>{loadError}</p>
+        <button
+          type="button"
+          class="load-more-button"
+          on:click={() => void loadMore()}
+          disabled={loadingMore}
+        >
+          Try again
+        </button>
+      </div>
+    {/if}
+
+    {#if hasMore && !loadError}
+      <div class="load-message">
+        {#if loadingMore}
+          <p>Loading more stories…</p>
+        {:else}
+          <button
+            type="button"
+            class="load-more-button"
+            on:click={() => void loadMore()}
+            disabled={loadingMore}
+          >
+            Load more stories
+          </button>
+        {/if}
+      </div>
+    {:else if !hasMore && !loadError && stories.length > 0}
+      <p class="load-message done">You've reached the end of the archive.</p>
+    {/if}
+  </div>
+
+  <div class="load-sentinel" bind:this={sentinel} aria-hidden="true"></div>
 </div>
 
 <style>
@@ -589,6 +754,71 @@
     100% {
       box-shadow: 0 0 0 0 rgba(45, 212, 191, 0);
     }
+  }
+
+  .load-more-section {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .load-message {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    text-align: center;
+    color: #e2e8f0;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35);
+  }
+
+  .load-message p {
+    margin: 0;
+  }
+
+  .load-message.error {
+    border-color: rgba(248, 113, 113, 0.6);
+    background: rgba(248, 113, 113, 0.12);
+    color: #fecaca;
+  }
+
+  .load-message.done {
+    border-style: dashed;
+    border-color: rgba(56, 189, 248, 0.4);
+  }
+
+  .load-more-section button {
+    margin-top: 0.75rem;
+  }
+
+  .load-more-button {
+    border: 1px solid rgba(56, 189, 248, 0.6);
+    background: rgba(15, 23, 42, 0.7);
+    color: #e0f2fe;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.65rem 1.5rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+
+  .load-more-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(56, 189, 248, 0.25);
+  }
+
+  .load-more-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .load-sentinel {
+    width: 100%;
+    height: 1px;
   }
 
   @media (max-width: 768px) {

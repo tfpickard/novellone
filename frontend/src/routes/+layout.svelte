@@ -30,6 +30,8 @@
     }
   ];
 
+  const githubRepoUrl = 'https://github.com/tfpickard/novellone.git';
+
   $: currentPath = $page.url.pathname;
   $: hurllolTitle =
     (data?.hurllol?.title && typeof data.hurllol.title === 'string'
@@ -44,18 +46,35 @@
 <nav class="site-nav">
   <div class="page-container nav-content">
     <a class="brand" href="/">{hurllolTitle}</a>
-    <div class="nav-links">
-      {#each navItems as item}
-        {@const active = item.isActive(currentPath)}
-        <a
-          class="nav-link"
-          class:active={active}
-          href={item.href}
-          aria-current={active ? 'page' : undefined}
-        >
-          {item.label}
-        </a>
-      {/each}
+    <div class="nav-actions">
+      <div class="nav-links">
+        {#each navItems as item}
+          {@const active = item.isActive(currentPath)}
+          <a
+            class="nav-link"
+            class:active={active}
+            href={item.href}
+            aria-current={active ? 'page' : undefined}
+          >
+            {item.label}
+          </a>
+        {/each}
+      </div>
+      <a
+        class="nav-link github-link"
+        href={githubRepoUrl}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label="View the project on GitHub"
+      >
+        <svg class="github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path
+            fill="currentColor"
+            d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.62 7.62 0 0 1 4.01 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8 8 0 0 0 8 0"
+          />
+        </svg>
+        <span>GitHub</span>
+      </a>
     </div>
   </div>
 </nav>
@@ -116,6 +135,12 @@
     gap: 0.5rem;
   }
 
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
   .nav-links {
     display: flex;
     align-items: center;
@@ -142,6 +167,18 @@
     box-shadow: 0 10px 30px rgba(59, 130, 246, 0.25);
   }
 
+  .github-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+  }
+
+  .github-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+
   @media (max-width: 720px) {
     .nav-content {
       flex-direction: column;
@@ -149,6 +186,12 @@
       padding-top: 1rem;
       padding-bottom: 1rem;
       gap: 0.75rem;
+    }
+
+    .nav-actions {
+      width: 100%;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .nav-links {
@@ -160,6 +203,10 @@
     .nav-link {
       flex: 1 1 auto;
       text-align: center;
+    }
+
+    .github-link {
+      flex: 0 0 auto;
     }
   }
 </style>

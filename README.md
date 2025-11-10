@@ -327,6 +327,6 @@ Feature ideas are welcome—especially around story visualization, interactive s
 
 ## License
 
-No explicit license has been provided. All rights reserved unless a license file is added.
+This project is licensed under the [MIT License](LICENSE). By contributing to or using the codebase, you agree to the terms outlined in the license file.
 
 ---
