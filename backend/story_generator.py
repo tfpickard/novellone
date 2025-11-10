@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import get_settings
-from config_store import get_runtime_config
+from config_store import RuntimeConfig, get_runtime_config
 from database import get_session
 from models import Chapter, Story, SystemConfig
 
@@ -704,17 +704,22 @@ def _safe_json_loads(text: str) -> dict[str, Any] | None:
     return result
 
 
-async def generate_story_premise() -> dict[str, Any]:
+async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
     # Generate random chaos parameters for this story
-    absurdity_initial = random.uniform(0.05, 0.25)
-    surrealism_initial = random.uniform(0.05, 0.25)
-    ridiculousness_initial = random.uniform(0.05, 0.25)
-    insanity_initial = random.uniform(0.05, 0.25)
+    initial_min = float(config.chaos_initial_min)
+    initial_max = float(config.chaos_initial_max)
+    increment_min = float(config.chaos_increment_min)
+    increment_max = float(config.chaos_increment_max)
 
-    absurdity_increment = random.uniform(0.02, 0.15)
-    surrealism_increment = random.uniform(0.02, 0.15)
-    ridiculousness_increment = random.uniform(0.02, 0.15)
-    insanity_increment = random.uniform(0.02, 0.15)
+    absurdity_initial = random.uniform(initial_min, initial_max)
+    surrealism_initial = random.uniform(initial_min, initial_max)
+    ridiculousness_initial = random.uniform(initial_min, initial_max)
+    insanity_initial = random.uniform(initial_min, initial_max)
+
+    absurdity_increment = random.uniform(increment_min, increment_max)
+    surrealism_increment = random.uniform(increment_min, increment_max)
+    ridiculousness_increment = random.uniform(increment_min, increment_max)
+    insanity_increment = random.uniform(increment_min, increment_max)
 
     logger.info(
         "Generated chaos parameters: absurdity=%.3f+%.3f, surrealism=%.3f+%.3f, ridiculousness=%.3f+%.3f, insanity=%.3f+%.3f",
@@ -1268,8 +1273,8 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
         return ""
 
 
-async def spawn_new_story() -> dict[str, Any]:
-    premise_data = await generate_story_premise()
+async def spawn_new_story(config: RuntimeConfig) -> dict[str, Any]:
+    premise_data = await generate_story_premise(config)
     title = premise_data.get("title") or "Untitled Expedition"
     premise = premise_data.get("premise") or "A mysterious journey unfolds."
     theme = await generate_story_theme(premise, title)

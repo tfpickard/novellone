@@ -20,7 +20,11 @@
     | 'openai_temperature_eval'
     | 'premise_prompt_refresh_interval'
     | 'premise_prompt_stats_window'
-    | 'premise_prompt_variation_strength';
+    | 'premise_prompt_variation_strength'
+    | 'chaos_initial_min'
+    | 'chaos_initial_max'
+    | 'chaos_increment_min'
+    | 'chaos_increment_max';
 
   type StringConfigKey = 'openai_model' | 'openai_premise_model' | 'openai_eval_model';
 
@@ -71,7 +75,11 @@
     openai_temperature_eval: 0.3,
     premise_prompt_refresh_interval: 6,
     premise_prompt_stats_window: 12,
-    premise_prompt_variation_strength: 0.65
+    premise_prompt_variation_strength: 0.65,
+    chaos_initial_min: 0.05,
+    chaos_initial_max: 0.25,
+    chaos_increment_min: 0.02,
+    chaos_increment_max: 0.15
   };
 
   let config: ConfigValues = { ...initialConfig };
@@ -273,6 +281,50 @@
       min: 0,
       max: 2,
       step: 0.05
+    },
+    {
+      key: 'chaos_initial_min',
+      label: 'Chaos Initial Minimum',
+      description: 'Lowest starting chaos factor applied to new stories across all dimensions.',
+      hint: 'Must be less than or equal to the maximum and between 0 and 1.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 1,
+      step: 0.01
+    },
+    {
+      key: 'chaos_initial_max',
+      label: 'Chaos Initial Maximum',
+      description: 'Highest starting chaos factor applied to new stories.',
+      hint: 'Must be greater than or equal to the minimum and between 0 and 1.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 1,
+      step: 0.01
+    },
+    {
+      key: 'chaos_increment_min',
+      label: 'Chaos Increment Minimum',
+      description: 'Smallest per-chapter chaos increase expected when generating chapters.',
+      hint: 'Must be less than or equal to the maximum and between 0 and 1.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 1,
+      step: 0.01
+    },
+    {
+      key: 'chaos_increment_max',
+      label: 'Chaos Increment Maximum',
+      description: 'Largest per-chapter chaos increase expected during generation.',
+      hint: 'Must be greater than or equal to the minimum and between 0 and 1.',
+      kind: 'number',
+      type: 'float',
+      min: 0,
+      max: 1,
+      step: 0.01
     }
   ];
 
@@ -373,6 +425,34 @@
       const minValue = Number(minRaw);
       if (minRaw.trim() && !Number.isNaN(minValue) && parsedNumber < minValue) {
         return 'Maximum active stories must be at least the minimum.';
+      }
+    }
+    if (item.key === 'chaos_initial_min') {
+      const maxRaw = inputs.chaos_initial_max;
+      const maxValue = Number(maxRaw);
+      if (maxRaw.trim() && !Number.isNaN(maxValue) && parsedNumber > maxValue) {
+        return 'Initial minimum cannot exceed the maximum.';
+      }
+    }
+    if (item.key === 'chaos_initial_max') {
+      const minRaw = inputs.chaos_initial_min;
+      const minValue = Number(minRaw);
+      if (minRaw.trim() && !Number.isNaN(minValue) && parsedNumber < minValue) {
+        return 'Initial maximum must be at least the minimum.';
+      }
+    }
+    if (item.key === 'chaos_increment_min') {
+      const maxRaw = inputs.chaos_increment_max;
+      const maxValue = Number(maxRaw);
+      if (maxRaw.trim() && !Number.isNaN(maxValue) && parsedNumber > maxValue) {
+        return 'Increment minimum cannot exceed the maximum.';
+      }
+    }
+    if (item.key === 'chaos_increment_max') {
+      const minRaw = inputs.chaos_increment_min;
+      const minValue = Number(minRaw);
+      if (minRaw.trim() && !Number.isNaN(minValue) && parsedNumber < minValue) {
+        return 'Increment maximum must be at least the minimum.';
       }
     }
     return null;

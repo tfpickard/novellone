@@ -86,6 +86,10 @@ export type RuntimeConfig = {
   premise_prompt_refresh_interval: number;
   premise_prompt_stats_window: number;
   premise_prompt_variation_strength: number;
+  chaos_initial_min: number;
+  chaos_initial_max: number;
+  chaos_increment_min: number;
+  chaos_increment_max: number;
 };
 
 export type PremisePromptState = {

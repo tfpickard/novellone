@@ -302,7 +302,7 @@ class BackgroundWorker:
             needed = config.min_active_stories - active_count
             logger.debug("Spawning %d stories to reach minimum active target", needed)
             for _ in range(needed):
-                await self._spawn_story(session)
+                await self._spawn_story(session, config)
         elif active_count > config.max_active_stories:
             excess = active_count - config.max_active_stories
             logger.debug("Completing %d stories to enforce maximum active limit", excess)
@@ -316,8 +316,8 @@ class BackgroundWorker:
             for story in victims:
                 await self._complete_story(session, story, "Reduced to maintain limit")
 
-    async def _spawn_story(self, session) -> None:
-        payload = await spawn_new_story()
+    async def _spawn_story(self, session, config: RuntimeConfig) -> None:
+        payload = await spawn_new_story(config)
         story = Story(
             title=payload["title"],
             premise=payload["premise"],

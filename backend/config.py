@@ -32,6 +32,10 @@ class AppSettings(BaseSettings):
     premise_prompt_variation_strength: float = Field(
         ..., alias="PREMISE_PROMPT_VARIATION_STRENGTH"
     )
+    chaos_initial_min: float = Field(0.05, alias="CHAOS_INITIAL_MIN")
+    chaos_initial_max: float = Field(0.25, alias="CHAOS_INITIAL_MAX")
+    chaos_increment_min: float = Field(0.02, alias="CHAOS_INCREMENT_MIN")
+    chaos_increment_max: float = Field(0.15, alias="CHAOS_INCREMENT_MAX")
 
     chapter_interval_seconds: int = Field(..., alias="CHAPTER_INTERVAL_SECONDS")
     evaluation_interval_chapters: int = Field(..., alias="EVALUATION_INTERVAL_CHAPTERS")
