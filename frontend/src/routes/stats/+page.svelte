@@ -3,6 +3,7 @@
   import { queueMetaRefresh, UnauthorizedError } from '$lib/api';
 
   export let data: PageData;
+  $: isAuthenticated = Boolean(data.config);
 
   const chapterLink = (item: PageData['stats']['recent_activity'][number]) =>
     `/story/${item.story_id}#chapter-${item.chapter_number}`;
@@ -38,6 +39,10 @@
   let refreshError: string | null = null;
 
   const triggerFullRefresh = async () => {
+    if (!isAuthenticated) {
+      refreshError = 'Admin access required to queue meta-analysis jobs.';
+      return;
+    }
     refreshPending = true;
     refreshMessage = null;
     refreshError = null;
@@ -265,16 +270,22 @@
       <p>Track extraction jobs, inspect metrics, and trigger manual refreshes.</p>
     </div>
 
-    <div class="meta-actions">
-      <button class="refresh-button" disabled={refreshPending} on:click={triggerFullRefresh}>
-        {refreshPending ? 'Queuing…' : 'Queue Full Refresh'}
-      </button>
-      {#if refreshMessage}
-        <span class="meta-status success">{refreshMessage}</span>
-      {:else if refreshError}
+    {#if isAuthenticated}
+      <div class="meta-actions">
+        <button class="refresh-button" disabled={refreshPending} on:click={triggerFullRefresh}>
+          {refreshPending ? 'Queuing…' : 'Queue Full Refresh'}
+        </button>
+        {#if refreshMessage}
+          <span class="meta-status success">{refreshMessage}</span>
+        {:else if refreshError}
+          <span class="meta-status error">{refreshError}</span>
+        {/if}
+      </div>
+    {:else if refreshError}
+      <div class="meta-actions">
         <span class="meta-status error">{refreshError}</span>
-      {/if}
-    </div>
+      </div>
+    {/if}
 
     <div class="meta-runtime">
       <div>

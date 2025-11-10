@@ -19,6 +19,7 @@
   export let data: PageData;
 
   let story = data.story;
+  $: isAuthenticated = Boolean(data.config);
   let container: HTMLElement;
   let socket: WebSocket | null = null;
   let killing = false;
@@ -69,6 +70,10 @@
   };
 
   const submitOverride = async () => {
+    if (!isAuthenticated) {
+      overrideError = 'Admin access required to manage overrides.';
+      return;
+    }
     if (overrideSaving) return;
     overrideSaving = true;
     overrideError = null;
@@ -108,6 +113,10 @@
   };
 
   const removeOverride = async (overrideId: string) => {
+    if (!isAuthenticated) {
+      overrideError = 'Admin access required to manage overrides.';
+      return;
+    }
     if (removingOverrides[overrideId]) return;
     removingOverrides[overrideId] = true;
     overrideError = null;
@@ -164,7 +173,7 @@
   }
 
   async function handleKill() {
-    if (killing || story.status !== 'active') {
+    if (!isAuthenticated || killing || story.status !== 'active') {
       return;
     }
     const input = window.prompt('Provide a reason for ending this story', story.completion_reason ?? 'Terminated manually');
@@ -185,7 +194,7 @@
   }
 
   async function handleDelete() {
-    if (deleting) return;
+    if (!isAuthenticated || deleting) return;
     const confirmed = window.confirm(`Are you sure you want to permanently delete "${story.title}"? This action cannot be undone.`);
     if (!confirmed) return;
     
@@ -206,7 +215,7 @@
     socket = createStorySocket(handleSocket);
   });
   async function handleGenerateChapter() {
-    if (generating || story.status !== 'active') return;
+    if (!isAuthenticated || generating || story.status !== 'active') return;
     generating = true;
     generateError = null;
     try {
@@ -370,58 +379,62 @@
 
           <div class="override-block">
             <h4>Manual Corrections</h4>
-            <form class="override-form" on:submit|preventDefault={submitOverride}>
-              <div class="field">
-                <label for="override-name">Entity Name</label>
-                <input
-                  id="override-name"
-                  type="text"
-                  bind:value={overrideName}
-                  placeholder="e.g. Captain Voss"
-                  required
-                />
-              </div>
-              <div class="field">
-                <label for="override-action">Action</label>
-                <select id="override-action" bind:value={overrideAction}>
-                  <option value="suppress">Suppress</option>
-                  <option value="merge">Merge Alias</option>
-                </select>
-              </div>
-              {#if overrideAction === 'merge'}
+            {#if isAuthenticated}
+              <form class="override-form" on:submit|preventDefault={submitOverride}>
                 <div class="field">
-                  <label for="override-target">Merge Into</label>
+                  <label for="override-name">Entity Name</label>
                   <input
-                    id="override-target"
+                    id="override-name"
                     type="text"
-                    bind:value={overrideTarget}
-                    placeholder="Canonical name"
+                    bind:value={overrideName}
+                    placeholder="e.g. Captain Voss"
                     required
                   />
                 </div>
-              {/if}
-              <div class="field">
-                <label for="override-scope">Scope</label>
-                <select id="override-scope" bind:value={overrideScope}>
-                  <option value="story">This Story</option>
-                  <option value="global">All Stories</option>
-                </select>
-              </div>
-              <div class="field notes">
-                <label for="override-notes">Notes</label>
-                <textarea
-                  id="override-notes"
-                  bind:value={overrideNotes}
-                  rows="1"
-                  placeholder="Optional context or reasoning"
-                ></textarea>
-              </div>
-              <div class="field action">
-                <button type="submit" class="override-submit" disabled={overrideSaving}>
-                  {overrideSaving ? 'Saving…' : 'Save Override'}
-                </button>
-              </div>
-            </form>
+                <div class="field">
+                  <label for="override-action">Action</label>
+                  <select id="override-action" bind:value={overrideAction}>
+                    <option value="suppress">Suppress</option>
+                    <option value="merge">Merge Alias</option>
+                  </select>
+                </div>
+                {#if overrideAction === 'merge'}
+                  <div class="field">
+                    <label for="override-target">Merge Into</label>
+                    <input
+                      id="override-target"
+                      type="text"
+                      bind:value={overrideTarget}
+                      placeholder="Canonical name"
+                      required
+                    />
+                  </div>
+                {/if}
+                <div class="field">
+                  <label for="override-scope">Scope</label>
+                  <select id="override-scope" bind:value={overrideScope}>
+                    <option value="story">This Story</option>
+                    <option value="global">All Stories</option>
+                  </select>
+                </div>
+                <div class="field notes">
+                  <label for="override-notes">Notes</label>
+                  <textarea
+                    id="override-notes"
+                    bind:value={overrideNotes}
+                    rows="1"
+                    placeholder="Optional context or reasoning"
+                  ></textarea>
+                </div>
+                <div class="field action">
+                  <button type="submit" class="override-submit" disabled={overrideSaving}>
+                    {overrideSaving ? 'Saving…' : 'Save Override'}
+                  </button>
+                </div>
+              </form>
+            {:else}
+              <p class="override-info-text">Sign in to manage manual overrides.</p>
+            {/if}
             {#if overrideError}
               <p class="override-error">{overrideError}</p>
             {/if}
@@ -448,13 +461,15 @@
                         Updated {formatTimestamp(item.updated_at)}
                       </div>
                     </div>
-                    <button
-                      class="override-remove"
-                      on:click|preventDefault={() => removeOverride(item.id)}
-                      disabled={removingOverrides[item.id]}
-                    >
-                      {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
-                    </button>
+                    {#if isAuthenticated}
+                      <button
+                        class="override-remove"
+                        on:click|preventDefault={() => removeOverride(item.id)}
+                        disabled={removingOverrides[item.id]}
+                      >
+                        {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
+                      </button>
+                    {/if}
                   </li>
                 {/each}
               </ul>
@@ -496,19 +511,21 @@
           <span class="param-value">{story.insanity_initial.toFixed(2)} +{story.insanity_increment.toFixed(2)}/ch</span>
         </div>
       </aside>
-      {#if story.status === 'active'}
+      {#if story.status === 'active' && isAuthenticated}
         <button class="generate-button" on:click={handleGenerateChapter} disabled={generating}>
           {generating ? 'Generating…' : 'Generate New Chapter'}
         </button>
       {/if}
-      {#if story.status === 'active'}
+      {#if story.status === 'active' && isAuthenticated}
         <button class="kill-button" on:click={handleKill} disabled={killing}>
           {killing ? 'Ending…' : 'Kill Story'}
         </button>
       {/if}
-      <button class="delete-button" on:click={handleDelete} disabled={deleting}>
-        {deleting ? 'Deleting…' : 'Delete Story'}
-      </button>
+      {#if isAuthenticated}
+        <button class="delete-button" on:click={handleDelete} disabled={deleting}>
+          {deleting ? 'Deleting…' : 'Delete Story'}
+        </button>
+      {/if}
       {#if killError}
         <p class="kill-error">{killError}</p>
       {/if}
@@ -1292,6 +1309,12 @@
     margin: 0;
     color: #f87171;
     font-size: 0.85rem;
+  }
+
+  .override-info-text {
+    margin: 0;
+    font-size: 0.85rem;
+    opacity: 0.75;
   }
 
   .override-list {
