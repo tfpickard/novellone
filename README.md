@@ -327,6 +327,7 @@ Feature ideas are welcome—especially around story visualization, interactive s
 
 ## License
 
-No explicit license has been provided. All rights reserved unless a license file is added.
+No explicit license has been provided. All rights reserved unless a license file is added. To encourage collaboration while
+keeping adoption friction low, we recommend adding the MIT License to the repository.
 
 ---

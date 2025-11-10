@@ -30,7 +30,7 @@
     }
   ];
 
-  const githubRepoUrl = 'https://github.com/novellone/novellone';
+  const githubRepoUrl = 'https://github.com/tfpickrd/novellone.git';
 
   $: currentPath = $page.url.pathname;
   $: hurllolTitle =
