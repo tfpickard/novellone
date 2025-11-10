@@ -270,7 +270,18 @@ class MetricStoryResult(BaseModel):
     cover_image_url: str | None
     chapter_count: int
     completed_at: datetime | None
+    last_activity_at: datetime | None = None
+    total_tokens: int | None = None
+    latest_chapter_number: int | None = None
+    premise: str | None = None
+    genre_tags: list[str] | None = None
+    style_authors: list[str] | None = None
+    narrative_perspective: str | None = None
+    tone: str | None = None
+    estimated_reading_time_minutes: int | None = None
     value: float
+    trend_change: float | None = None
+    trend_samples: list[float] | None = None
 
 
 class MetricExtremes(BaseModel):
@@ -282,6 +293,7 @@ class MetricExtremes(BaseModel):
     unit: str | None = None
     decimals: int = 2
     higher_is_better: bool = True
+    priority: bool = False
     best: MetricStoryResult | None = None
     worst: MetricStoryResult | None = None
 
@@ -1063,6 +1075,10 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
         return {"metrics": []}
 
     stories: dict[uuid.UUID, Story] = {story.id: story for story in story_rows}
+    last_activity_by_story: dict[uuid.UUID, datetime | None] = {
+        story_id: story.last_chapter_at for story_id, story in stories.items()
+    }
+    latest_chapter_numbers: dict[uuid.UUID, int] = {}
     aggregates: dict[uuid.UUID, dict[str, float]] = {
         story_id: {
             "chapter_count": float(story.chapter_count),
@@ -1070,6 +1086,16 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
         }
         for story_id, story in stories.items()
     }
+
+    metric_trends: dict[str, dict[uuid.UUID, dict[str, Any]]] = {}
+
+    def record_trend(metric_key: str, story_id: uuid.UUID, points: list[float]) -> None:
+        if not points:
+            return
+        samples = points[-12:]
+        change = points[-1] - points[0] if len(points) > 1 else 0.0
+        metric_data = metric_trends.setdefault(metric_key, {})
+        metric_data[story_id] = {"change": change, "samples": samples}
 
     eval_stmt = (
         select(
@@ -1097,6 +1123,38 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
         if row.avg_pacing_score is not None:
             data["avg_pacing_score"] = float(row.avg_pacing_score)
 
+    eval_history_stmt = (
+        select(
+            StoryEvaluation.story_id,
+            StoryEvaluation.chapter_number,
+            StoryEvaluation.overall_score,
+            StoryEvaluation.coherence_score,
+            StoryEvaluation.novelty_score,
+            StoryEvaluation.engagement_score,
+            StoryEvaluation.pacing_score,
+        )
+        .order_by(StoryEvaluation.story_id, StoryEvaluation.chapter_number)
+    )
+
+    eval_histories: dict[uuid.UUID, dict[str, list[float]]] = {}
+    eval_history_rows = await session.execute(eval_history_stmt)
+    for row in eval_history_rows:
+        story_id = row.story_id
+        story_histories = eval_histories.setdefault(story_id, {})
+        for metric_key, attr in (
+            (
+                ("avg_overall_score", "overall_score"),
+                ("avg_coherence_score", "coherence_score"),
+                ("avg_novelty_score", "novelty_score"),
+                ("avg_engagement_score", "engagement_score"),
+                ("avg_pacing_score", "pacing_score"),
+            )
+        ):
+            value = getattr(row, attr, None)
+            if value is None:
+                continue
+            story_histories.setdefault(metric_key, []).append(float(value))
+
     chaos_stmt = (
         select(
             Chapter.story_id,
@@ -1120,6 +1178,53 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
         if row.avg_insanity is not None:
             data["avg_insanity"] = float(row.avg_insanity)
 
+    chaos_history_stmt = (
+        select(
+            Chapter.story_id,
+            Chapter.chapter_number,
+            Chapter.absurdity,
+            Chapter.surrealism,
+            Chapter.ridiculousness,
+            Chapter.insanity,
+            Chapter.created_at,
+        )
+        .order_by(Chapter.story_id, Chapter.chapter_number)
+    )
+
+    chaos_histories: dict[uuid.UUID, dict[str, list[float]]] = {}
+    chaos_history_rows = await session.execute(chaos_history_stmt)
+    for row in chaos_history_rows:
+        story_id = row.story_id
+        if row.chapter_number is not None:
+            current_latest = latest_chapter_numbers.get(story_id, 0)
+            if row.chapter_number > current_latest:
+                latest_chapter_numbers[story_id] = row.chapter_number
+        if row.created_at is not None:
+            existing = last_activity_by_story.get(story_id)
+            if existing is None or row.created_at > existing:
+                last_activity_by_story[story_id] = row.created_at
+        story_histories = chaos_histories.setdefault(story_id, {})
+        for metric_key, attr in (
+            (
+                ("avg_absurdity", "absurdity"),
+                ("avg_surrealism", "surrealism"),
+                ("avg_ridiculousness", "ridiculousness"),
+                ("avg_insanity", "insanity"),
+            )
+        ):
+            value = getattr(row, attr, None)
+            if value is None:
+                continue
+            story_histories.setdefault(metric_key, []).append(float(value))
+
+    for story_id, metric_history in eval_histories.items():
+        for metric_key, values in metric_history.items():
+            record_trend(metric_key, story_id, values)
+
+    for story_id, metric_history in chaos_histories.items():
+        for metric_key, values in metric_history.items():
+            record_trend(metric_key, story_id, values)
+
     metric_definitions = [
         {
             "key": "avg_overall_score",
@@ -1129,6 +1234,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "order": 1,
             "decimals": 2,
             "higher_is_better": True,
+            "priority": True,
         },
         {
             "key": "avg_coherence_score",
@@ -1138,6 +1244,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "order": 2,
             "decimals": 2,
             "higher_is_better": True,
+            "priority": True,
         },
         {
             "key": "avg_novelty_score",
@@ -1147,6 +1254,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "order": 3,
             "decimals": 2,
             "higher_is_better": True,
+            "priority": True,
         },
         {
             "key": "avg_engagement_score",
@@ -1156,6 +1264,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "order": 4,
             "decimals": 2,
             "higher_is_better": True,
+            "priority": True,
         },
         {
             "key": "avg_pacing_score",
@@ -1165,6 +1274,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "order": 5,
             "decimals": 2,
             "higher_is_better": True,
+            "priority": True,
         },
         {
             "key": "avg_absurdity",
@@ -1210,6 +1320,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "order": 10,
             "decimals": 0,
             "higher_is_better": True,
+            "priority": True,
         },
         {
             "key": "total_tokens",
@@ -1241,6 +1352,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
 
         def build_entry(story_id: uuid.UUID, value: float) -> MetricStoryResult:
             story = stories[story_id]
+            trend_data = metric_trends.get(key, {}).get(story_id, {})
             return MetricStoryResult(
                 story_id=story.id,
                 title=story.title,
@@ -1248,7 +1360,24 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
                 cover_image_url=story.cover_image_url,
                 chapter_count=story.chapter_count,
                 completed_at=story.completed_at,
+                last_activity_at=(
+                    last_activity_by_story.get(story_id)
+                    or story.completed_at
+                    or story.created_at
+                ),
+                total_tokens=story.total_tokens,
+                latest_chapter_number=latest_chapter_numbers.get(story_id)
+                or story.chapter_count
+                or None,
+                premise=story.premise,
+                genre_tags=story.genre_tags,
+                style_authors=story.style_authors,
+                narrative_perspective=story.narrative_perspective,
+                tone=story.tone,
+                estimated_reading_time_minutes=story.estimated_reading_time_minutes,
                 value=value,
+                trend_change=trend_data.get("change"),
+                trend_samples=trend_data.get("samples"),
             )
 
         metric_results.append(
@@ -1261,6 +1390,7 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
                 unit=definition.get("unit"),
                 decimals=definition.get("decimals", 2),
                 higher_is_better=definition.get("higher_is_better", True),
+                priority=definition.get("priority", False),
                 best=build_entry(best_story_id, best_value),
                 worst=build_entry(worst_story_id, worst_value),
             )

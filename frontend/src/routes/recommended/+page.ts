@@ -8,7 +8,18 @@ export type MetricStory = {
   cover_image_url: string | null;
   chapter_count: number;
   completed_at: string | null;
+  last_activity_at: string | null;
+  total_tokens: number | null;
+  latest_chapter_number: number | null;
+  premise: string | null;
+  genre_tags: string[] | null;
+  style_authors: string[] | null;
+  narrative_perspective: string | null;
+  tone: string | null;
+  estimated_reading_time_minutes: number | null;
   value: number | null;
+  trend_change: number | null;
+  trend_samples: number[] | null;
 };
 
 export type MetricExtremes = {
@@ -20,6 +31,7 @@ export type MetricExtremes = {
   unit?: string | null;
   decimals: number;
   higher_is_better: boolean;
+  priority: boolean;
   best: MetricStory | null;
   worst: MetricStory | null;
 };
