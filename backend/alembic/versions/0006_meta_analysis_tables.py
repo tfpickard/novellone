@@ -1,7 +1,7 @@
 """meta analysis tables
 
 Revision ID: 0006_meta_analysis_tables
-Revises: 0005_add_style_metadata
+Revises: 0005
 Create Date: 2024-05-15 00:00:00.000000
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "0006_meta_analysis_tables"
-down_revision = "0005_add_style_metadata"
+down_revision = "0005"
 branch_labels = None
 depends_on = None
 
