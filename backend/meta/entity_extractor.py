@@ -252,32 +252,60 @@ class EntityExtractionService:
     ) -> list[StoryTheme]:
         themes: list[StoryTheme] = []
 
-        base_themes = self._normalise_theme_json(story.theme_json)
-        for idx, theme_name in enumerate(base_themes, start=1):
+        def add_theme(
+            *,
+            name: str,
+            weight: float,
+            confidence: float,
+            source: str,
+            rank: int,
+            seen: set[str],
+        ) -> None:
+            normalised = name.strip()
+            if not normalised:
+                return
+            key = normalised.casefold()
+            if key in seen:
+                return
+            seen.add(key)
             themes.append(
                 StoryTheme(
                     story_id=story.id,
-                    name=theme_name,
-                    weight=1.0,
-                    confidence=0.6,
-                    source="story.theme_json",
-                    metadata_json={"rank": idx},
+                    name=normalised,
+                    weight=weight,
+                    confidence=confidence,
+                    source=source,
+                    metadata_json={"rank": rank},
                     updated_at=datetime.utcnow(),
                 )
             )
 
+        seen_themes: set[str] = set()
+
+        base_themes = self._normalise_theme_json(story.theme_json)
+        base_rank = 0
+        for theme_name in base_themes:
+            base_rank += 1
+            add_theme(
+                name=theme_name,
+                weight=1.0,
+                confidence=0.6,
+                source="story.theme_json",
+                rank=base_rank,
+                seen=seen_themes,
+            )
+
         keywords = self._extract_keywords(corpus)
-        for idx, keyword in enumerate(keywords, start=1):
-            themes.append(
-                StoryTheme(
-                    story_id=story.id,
-                    name=keyword,
-                    weight=max(0.3, 1.0 - 0.05 * (idx - 1)),
-                    confidence=0.45,
-                    source="keyword",
-                    metadata_json={"rank": idx},
-                    updated_at=datetime.utcnow(),
-                )
+        keyword_rank = 0
+        for keyword in keywords:
+            keyword_rank += 1
+            add_theme(
+                name=keyword,
+                weight=max(0.3, 1.0 - 0.05 * (keyword_rank - 1)),
+                confidence=0.45,
+                source="keyword",
+                rank=keyword_rank,
+                seen=seen_themes,
             )
 
         return themes
