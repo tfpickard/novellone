@@ -157,6 +157,62 @@ export function getUniverseOverview(): Promise<any> {
   return request('/api/universe/overview');
 }
 
+export function getUniverseMetrics(): Promise<any> {
+  return request('/api/universe/metrics');
+}
+
+export type EntityOverridePayload = {
+  story_id?: string | null;
+  name: string;
+  action: 'suppress' | 'merge';
+  target_name?: string | null;
+  notes?: string | null;
+};
+
+export type EntityOverrideUpdatePayload = Partial<{
+  name: string;
+  action: 'suppress' | 'merge';
+  target_name: string | null;
+  notes: string | null;
+}>;
+
+export function createEntityOverride(payload: EntityOverridePayload): Promise<any> {
+  return request('/api/universe/overrides', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateEntityOverride(id: string, payload: EntityOverrideUpdatePayload): Promise<any> {
+  return request(`/api/universe/overrides/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteEntityOverride(id: string): Promise<any> {
+  return request(`/api/universe/overrides/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+export function listEntityOverrides(params?: { story_id?: string | null }): Promise<any> {
+  const search = new URLSearchParams();
+  if (params?.story_id) {
+    search.set('story_id', params.story_id);
+  }
+  const query = search.toString();
+  const suffix = query ? `?${query}` : '';
+  return request(`/api/universe/overrides${suffix}`);
+}
+
+export function queueMetaRefresh(payload?: { story_id?: string | null; full_rebuild?: boolean }): Promise<any> {
+  return request('/api/universe/refresh', {
+    method: 'POST',
+    body: JSON.stringify(payload ?? {})
+  });
+}
+
 export function getConfig(): Promise<RuntimeConfig> {
   return request('/api/config');
 }

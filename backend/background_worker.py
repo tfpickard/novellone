@@ -11,8 +11,15 @@ from sqlalchemy.orm import selectinload
 from config import get_settings
 from config_store import RuntimeConfig, get_runtime_config
 from database import get_session
-from models import Chapter, Story, StoryEvaluation
-from meta import CorpusExtractionService, EntityExtractionService, UniverseGraphService
+from models import Chapter, MetaAnalysisRun, Story, StoryEvaluation
+from meta import (
+    CorpusExtractionService,
+    CorpusRefreshResult,
+    EntityExtractionService,
+    EntityRefreshResult,
+    UniverseGraphService,
+    UniverseRefreshResult,
+)
 from story_evaluator import evaluate_story
 from story_generator import generate_chapter, generate_cover_image, spawn_new_story
 from websocket_manager import ws_manager
@@ -31,6 +38,9 @@ class BackgroundWorker:
         self._universe_service = UniverseGraphService()
         self._stories_to_refresh: set[uuid.UUID] = set()
         self._last_universe_refresh: datetime | None = None
+        self._last_full_refresh: datetime | None = None
+        self._force_full_refresh: bool = False
+        self._full_refresh_interval = timedelta(hours=24)
 
     async def start(self) -> None:
         if not self.scheduler.running:
@@ -330,7 +340,8 @@ class BackgroundWorker:
     async def _run_meta_analysis(self, session, loaded_stories: list[Story]) -> None:
         candidates = set(self._stories_to_refresh)
         needs_universe = self._needs_universe_refresh()
-        if not candidates and not needs_universe:
+        full_refresh = self._needs_full_refresh()
+        if not candidates and not needs_universe and not full_refresh:
             return
 
         stories_by_id = {story.id: story for story in loaded_stories}
@@ -345,22 +356,75 @@ class BackgroundWorker:
             stories_by_id.update({story.id: story for story in fetched})
 
         target_stories = [stories_by_id[story_id] for story_id in candidates if story_id in stories_by_id]
-        refresh_universe = needs_universe
+        refresh_universe = needs_universe or full_refresh
+
+        if full_refresh:
+            stmt = select(Story).options(selectinload(Story.chapters))
+            all_stories = list((await session.execute(stmt)).scalars())
+            stories_by_id.update({story.id: story for story in all_stories})
+            target_stories = list(stories_by_id.values())
 
         if target_stories:
-            corpora = await self._corpus_service.refresh_story_corpora(session, target_stories)
-            await self._entity_service.refresh_entities(session, target_stories, corpora)
+            corpus_result = await self._corpus_service.refresh_story_corpora(session, target_stories)
+            await self._record_meta_run(session, "corpus_refresh", corpus_result)
+            entity_result = await self._entity_service.refresh_entities(
+                session, target_stories, corpus_result.snapshots
+            )
+            await self._record_meta_run(session, "entity_refresh", entity_result)
             self._stories_to_refresh.difference_update({story.id for story in target_stories})
             refresh_universe = True
 
         if refresh_universe:
-            await self._universe_service.refresh_universe(session)
+            universe_result = await self._universe_service.refresh_universe(session)
+            await self._record_meta_run(session, "universe_refresh", universe_result)
             self._last_universe_refresh = datetime.utcnow()
+            if full_refresh:
+                self._last_full_refresh = datetime.utcnow()
+                self._force_full_refresh = False
+
+    async def _record_meta_run(
+        self,
+        session,
+        run_type: str,
+        result: CorpusRefreshResult | EntityRefreshResult | UniverseRefreshResult,
+        *,
+        success: bool = True,
+        error: str | None = None,
+    ) -> None:
+        processed = getattr(result, "processed", getattr(result, "stories", 0))
+        metadata = result.as_metadata() if hasattr(result, "as_metadata") else {}
+        session.add(
+            MetaAnalysisRun(
+                run_type=run_type,
+                status="success" if success else "failed",
+                started_at=result.started_at,
+                finished_at=result.finished_at,
+                duration_ms=result.duration_ms,
+                processed_items=processed,
+                metadata=metadata,
+                error_message=error,
+            )
+        )
+
+    def request_meta_refresh(
+        self, story_id: uuid.UUID | None = None, *, full_rebuild: bool = False
+    ) -> None:
+        if story_id:
+            self._stories_to_refresh.add(story_id)
+        if full_rebuild or story_id is None:
+            self._force_full_refresh = True
 
     def _needs_universe_refresh(self) -> bool:
         if self._last_universe_refresh is None:
             return True
         return (datetime.utcnow() - self._last_universe_refresh) >= timedelta(hours=6)
+
+    def _needs_full_refresh(self) -> bool:
+        if self._force_full_refresh:
+            return True
+        if self._last_full_refresh is None:
+            return True
+        return (datetime.utcnow() - self._last_full_refresh) >= self._full_refresh_interval
 
 
 def create_worker() -> BackgroundWorker:

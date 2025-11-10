@@ -116,6 +116,27 @@ class StoryTheme(Base):
     story: Mapped[Story] = relationship(backref="derived_themes")
 
 
+class StoryEntityOverride(Base):
+    __tablename__ = "story_entity_overrides"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stories.id", ondelete="CASCADE"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    action: Mapped[str] = mapped_column(String(32))
+    target_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    story: Mapped[Story | None] = relationship(backref="entity_overrides")
+
+
 class StoryUniverseLink(Base):
     __tablename__ = "story_universe_links"
     __table_args__ = (UniqueConstraint("source_story_id", "target_story_id", name="uq_story_link"),)
@@ -154,6 +175,20 @@ class UniverseClusterMembership(Base):
 
     cluster: Mapped[UniverseCluster] = relationship(backref="members")
     story: Mapped[Story] = relationship(backref="universe_membership")
+
+
+class MetaAnalysisRun(Base):
+    __tablename__ = "meta_analysis_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_type: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="success")
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    duration_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    processed_items: Mapped[int] = mapped_column(Integer, default=0)
+    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Chapter(Base):

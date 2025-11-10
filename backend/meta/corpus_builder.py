@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,6 +39,23 @@ class StoryCorpusSnapshot:
         )
 
 
+@dataclass(slots=True)
+class CorpusRefreshResult:
+    snapshots: dict[uuid.UUID, "StoryCorpusSnapshot"]
+    processed: int
+    refreshed: int
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: float
+
+    def as_metadata(self) -> dict[str, int | float]:
+        return {
+            "processed": self.processed,
+            "refreshed": self.refreshed,
+            "duration_ms": round(self.duration_ms, 2),
+        }
+
+
 class CorpusExtractionService:
     """Builds and caches full-text corpora for downstream meta analysis."""
 
@@ -48,15 +66,26 @@ class CorpusExtractionService:
         self,
         session: AsyncSession,
         stories: Sequence[Story],
-    ) -> dict[uuid.UUID, StoryCorpusSnapshot]:
+    ) -> CorpusRefreshResult:
         """Ensure story corpora are materialised and up to date.
 
         Returns a mapping of story_id to snapshots that can be fed into
         downstream processors.
         """
 
+        started_at = datetime.utcnow()
+        timer = time.perf_counter()
         if not stories:
-            return {}
+            finished_at = datetime.utcnow()
+            duration_ms = (time.perf_counter() - timer) * 1000
+            return CorpusRefreshResult(
+                snapshots={},
+                processed=0,
+                refreshed=0,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms,
+            )
 
         story_ids = [story.id for story in stories]
         existing_rows = (
@@ -67,6 +96,7 @@ class CorpusExtractionService:
         existing_map = {row.story_id: row for row in existing_rows}
 
         snapshots: dict[uuid.UUID, StoryCorpusSnapshot] = {}
+        refreshed_count = 0
         for story in stories:
             existing = existing_map.get(story.id)
             if await self._should_refresh(story, existing):
@@ -89,11 +119,21 @@ class CorpusExtractionService:
                     existing.token_count = snapshot.token_count
                     existing.data = snapshot.data
                 logger.debug("Story corpus refreshed", extra={"story_id": str(story.id)})
+                refreshed_count += 1
             else:
                 snapshot = StoryCorpusSnapshot.from_model(existing)  # type: ignore[arg-type]
             snapshots[story.id] = snapshot
 
-        return snapshots
+        finished_at = datetime.utcnow()
+        duration_ms = (time.perf_counter() - timer) * 1000
+        return CorpusRefreshResult(
+            snapshots=snapshots,
+            processed=len(stories),
+            refreshed=refreshed_count,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=duration_ms,
+        )
 
     async def _should_refresh(
         self,

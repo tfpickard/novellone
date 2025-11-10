@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import (
     Depends,
@@ -16,7 +16,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import selectinload
@@ -29,8 +29,10 @@ from logging_config import configure_logging
 from database import get_session
 from models import (
     Chapter,
+    MetaAnalysisRun,
     Story,
     StoryEntity,
+    StoryEntityOverride,
     StoryEvaluation,
     StoryTheme,
     StoryUniverseLink,
@@ -180,6 +182,87 @@ class ThemeAggregate(BaseModel):
     story_count: int
 
 
+class MetaAnalysisRunRead(BaseModel):
+    id: uuid.UUID
+    run_type: str
+    status: str
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: float
+    processed_items: int
+    metadata: dict[str, Any] | None = None
+    error_message: str | None = None
+
+    @classmethod
+    def from_model(cls, run: MetaAnalysisRun) -> "MetaAnalysisRunRead":
+        return cls(
+            id=run.id,
+            run_type=run.run_type,
+            status=run.status,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            duration_ms=float(run.duration_ms or 0.0),
+            processed_items=int(run.processed_items or 0),
+            metadata=run.metadata or {},
+            error_message=run.error_message,
+        )
+
+
+class EntityOverrideRead(BaseModel):
+    id: uuid.UUID
+    story_id: uuid.UUID | None
+    name: str
+    action: str
+    target_name: str | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+    scope: Literal["story", "global"]
+
+    @classmethod
+    def from_model(cls, override: StoryEntityOverride) -> "EntityOverrideRead":
+        scope = "story" if override.story_id else "global"
+        return cls(
+            id=override.id,
+            story_id=override.story_id,
+            name=override.name,
+            action=override.action,
+            target_name=override.target_name,
+            notes=override.notes,
+            created_at=override.created_at,
+            updated_at=override.updated_at,
+            scope=scope,
+        )
+
+
+class EntityOverrideCreate(BaseModel):
+    story_id: uuid.UUID | None = None
+    name: str
+    action: Literal["suppress", "merge"]
+    target_name: str | None = None
+    notes: str | None = None
+
+    @field_validator("target_name")
+    @classmethod
+    def validate_target(cls, value: str | None, info: Any) -> str | None:
+        action = info.data.get("action")
+        if action == "merge" and not value:
+            raise ValueError("target_name is required when action is 'merge'")
+        return value
+
+
+class EntityOverrideUpdate(BaseModel):
+    name: str | None = None
+    action: Literal["suppress", "merge"] | None = None
+    target_name: str | None = None
+    notes: str | None = None
+
+
+class MetaRefreshRequest(BaseModel):
+    story_id: uuid.UUID | None = None
+    full_rebuild: bool = False
+
+
 class StorySummary(BaseModel):
     id: uuid.UUID
     title: str
@@ -258,18 +341,26 @@ class StoryDetail(StorySummary):
     completion_reason: str | None
     evaluations: list[StoryEvaluationRead]
     chapters: list[ChapterRead]
+    entity_overrides: list[EntityOverrideRead] = Field(default_factory=list)
 
     @classmethod
     def from_model(
         cls,
         story: Story,
         universe: StoryUniverseContext | None = None,
+        overrides: list[StoryEntityOverride] | None = None,
     ) -> "StoryDetail":
+        override_payload = (
+            [EntityOverrideRead.from_model(override) for override in overrides]
+            if overrides
+            else []
+        )
         return cls(
             **StorySummary.from_model(story, include_stats=True, universe=universe).model_dump(),
             completion_reason=story.completion_reason,
             evaluations=[StoryEvaluationRead.from_model(e) for e in story.evaluations],
             chapters=[ChapterRead.from_model(c, include_stats=True) for c in story.chapters],
+            entity_overrides=override_payload,
         )
 
 
@@ -437,7 +528,10 @@ async def get_story(story_id: uuid.UUID, session: SessionDep) -> dict[str, Any]:
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     universe_context = await _get_story_universe_context(session, story.id)
-    return StoryDetail.from_model(story, universe=universe_context).model_dump()
+    overrides = await _get_story_entity_overrides(session, story.id)
+    return StoryDetail.from_model(
+        story, universe=universe_context, overrides=overrides
+    ).model_dump()
 
 
 async def _get_story_universe_context(
@@ -511,6 +605,20 @@ async def _get_story_universe_context(
         cohesion=cohesion,
         related_stories=related_items,
     )
+
+
+async def _get_story_entity_overrides(
+    session: Any, story_id: uuid.UUID
+) -> list[StoryEntityOverride]:
+    stmt = (
+        select(StoryEntityOverride)
+        .where(
+            (StoryEntityOverride.story_id == story_id)
+            | (StoryEntityOverride.story_id.is_(None))
+        )
+        .order_by(StoryEntityOverride.created_at.asc())
+    )
+    return list((await session.execute(stmt)).scalars())
 
 
 @app.get("/api/stories/{story_id}/theme")
@@ -603,7 +711,10 @@ async def generate_chapter_now(story_id: uuid.UUID, session: SessionDep) -> dict
 
     logger.info("Manual chapter generation requested for story %s", refreshed.title)
     universe_context = await _get_story_universe_context(session, refreshed.id)
-    return StoryDetail.from_model(refreshed, universe=universe_context).model_dump()
+    overrides = await _get_story_entity_overrides(session, refreshed.id)
+    return StoryDetail.from_model(
+        refreshed, universe=universe_context, overrides=overrides
+    ).model_dump()
 
 
 @app.post("/api/stories", status_code=201)
@@ -625,7 +736,10 @@ async def create_story(payload: StoryCreate, session: SessionDep) -> dict[str, A
     if not story_obj:
         raise HTTPException(status_code=500, detail="Failed to load created story")
     universe_context = await _get_story_universe_context(session, story_obj.id)
-    return StoryDetail.from_model(story_obj, universe=universe_context).model_dump()
+    overrides = await _get_story_entity_overrides(session, story_obj.id)
+    return StoryDetail.from_model(
+        story_obj, universe=universe_context, overrides=overrides
+    ).model_dump()
 
 
 @app.get("/api/universe/overview")
@@ -688,6 +802,152 @@ async def get_universe_overview(session: SessionDep) -> dict[str, Any]:
         "top_entities": top_entities,
         "top_themes": top_themes,
     }
+
+
+@app.get("/api/universe/metrics")
+async def get_universe_metrics(
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    runs = (
+        await session.execute(
+            select(MetaAnalysisRun).order_by(MetaAnalysisRun.started_at.desc()).limit(50)
+        )
+    ).scalars().all()
+    run_payload = [MetaAnalysisRunRead.from_model(run).model_dump() for run in runs]
+
+    grouped: dict[str, list[MetaAnalysisRun]] = {}
+    for run in runs:
+        grouped.setdefault(run.run_type, []).append(run)
+
+    summary: dict[str, dict[str, Any]] = {}
+    for run_type, entries in grouped.items():
+        durations = [float(entry.duration_ms or 0.0) for entry in entries]
+        successes = sum(1 for entry in entries if entry.status == "success")
+        summary[run_type] = {
+            "total_runs": len(entries),
+            "success_rate": successes / len(entries) if entries else 0.0,
+            "avg_duration_ms": sum(durations) / len(durations) if durations else 0.0,
+            "latest_status": entries[0].status,
+            "latest_finished_at": entries[0].finished_at.isoformat(),
+        }
+
+    runtime = {
+        "last_universe_refresh": worker._last_universe_refresh.isoformat()  # type: ignore[attr-defined]
+        if worker._last_universe_refresh
+        else None,
+        "last_full_refresh": worker._last_full_refresh.isoformat()  # type: ignore[attr-defined]
+        if worker._last_full_refresh
+        else None,
+    }
+
+    return {"runs": run_payload, "summary": summary, "runtime": runtime}
+
+
+@app.get("/api/universe/overrides")
+async def list_entity_overrides(
+    session: SessionDep,
+    story_id: uuid.UUID | None = Query(default=None),
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    stmt = select(StoryEntityOverride)
+    if story_id:
+        stmt = stmt.where(
+            (StoryEntityOverride.story_id == story_id)
+            | (StoryEntityOverride.story_id.is_(None))
+        )
+    stmt = stmt.order_by(StoryEntityOverride.created_at.asc())
+    overrides = list((await session.execute(stmt)).scalars())
+    return {
+        "overrides": [EntityOverrideRead.from_model(row).model_dump() for row in overrides]
+    }
+
+
+@app.post("/api/universe/overrides", status_code=201)
+async def create_entity_override(
+    payload: EntityOverrideCreate,
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    override = StoryEntityOverride(
+        story_id=payload.story_id,
+        name=payload.name,
+        action=payload.action,
+        target_name=payload.target_name,
+        notes=payload.notes,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    session.add(override)
+    await session.flush()
+    await session.commit()
+    worker.request_meta_refresh(
+        override.story_id, full_rebuild=override.story_id is None
+    )
+    await session.refresh(override)
+    return EntityOverrideRead.from_model(override).model_dump()
+
+
+@app.patch("/api/universe/overrides/{override_id}")
+async def update_entity_override(
+    override_id: uuid.UUID,
+    payload: EntityOverrideUpdate,
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    override = await session.get(StoryEntityOverride, override_id)
+    if not override:
+        raise HTTPException(status_code=404, detail="Override not found")
+
+    updates = payload.model_dump(exclude_none=True)
+    if updates.get("action") == "merge" and not (
+        updates.get("target_name") or override.target_name
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="target_name is required when setting action to 'merge'",
+        )
+
+    for key, value in updates.items():
+        setattr(override, key, value)
+    override.updated_at = datetime.utcnow()
+    await session.commit()
+    worker.request_meta_refresh(
+        override.story_id, full_rebuild=override.story_id is None
+    )
+    await session.refresh(override)
+    return EntityOverrideRead.from_model(override).model_dump()
+
+
+@app.delete("/api/universe/overrides/{override_id}")
+async def delete_entity_override(
+    override_id: uuid.UUID,
+    session: SessionDep,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    override = await session.get(StoryEntityOverride, override_id)
+    if not override:
+        raise HTTPException(status_code=404, detail="Override not found")
+
+    story_id = override.story_id
+    await session.delete(override)
+    await session.commit()
+    worker.request_meta_refresh(story_id, full_rebuild=story_id is None)
+    return {"status": "deleted"}
+
+
+@app.post("/api/universe/refresh", status_code=202)
+async def queue_meta_refresh(
+    payload: MetaRefreshRequest,
+    _: AdminSession = Depends(require_admin),
+) -> dict[str, Any]:
+    story_id = payload.story_id
+    worker.request_meta_refresh(
+        story_id,
+        full_rebuild=payload.full_rebuild or story_id is None,
+    )
+    scope = "story" if story_id else "full"
+    return {"status": "queued", "scope": scope}
 
 
 @app.get("/api/stats")
@@ -856,8 +1116,12 @@ async def admin_spawn_story(
             "type": "new_story",
             "story_id": str(story_obj.id),
         })
-    
-    return StoryDetail.from_model(story_obj).model_dump()
+
+    universe_context = await _get_story_universe_context(session, story_obj.id)
+    overrides = await _get_story_entity_overrides(session, story_obj.id)
+    return StoryDetail.from_model(
+        story_obj, universe=universe_context, overrides=overrides
+    ).model_dump()
 
 
 @app.delete("/api/stories/{story_id}")
