@@ -345,13 +345,15 @@ class BackgroundWorker:
             stories_by_id.update({story.id: story for story in fetched})
 
         target_stories = [stories_by_id[story_id] for story_id in candidates if story_id in stories_by_id]
+        refresh_universe = needs_universe
 
         if target_stories:
             corpora = await self._corpus_service.refresh_story_corpora(session, target_stories)
             await self._entity_service.refresh_entities(session, target_stories, corpora)
             self._stories_to_refresh.difference_update({story.id for story in target_stories})
+            refresh_universe = True
 
-        if needs_universe:
+        if refresh_universe:
             await self._universe_service.refresh_universe(session)
             self._last_universe_refresh = datetime.utcnow()
 
