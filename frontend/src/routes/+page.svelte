@@ -355,7 +355,7 @@
       rgba(11, 16, 32, 0.88) 75%,
       rgba(11, 16, 32, 0.95) 100%
     );
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(3px);
   }
 
   .cover-overlay > * {
