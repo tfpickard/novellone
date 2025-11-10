@@ -19,6 +19,23 @@ logger = logging.getLogger(__name__)
 
 
 ENTITY_PATTERN = re.compile(r"\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b")
+COLOR_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+
+VISUAL_THEME_KEYS = {
+    "primary_color",
+    "secondary_color",
+    "background_color",
+    "text_color",
+    "text_secondary",
+    "accent_color",
+    "border_color",
+    "card_background",
+    "font_heading",
+    "font_body",
+    "border_radius",
+    "shadow_style",
+    "animation_speed",
+}
 ENTITY_STOPWORDS = {
     "The",
     "A",
@@ -339,24 +356,58 @@ class EntityExtractionService:
         return EntityOverrideRules(suppress=suppress, merges=merges)
 
     def _normalise_theme_json(self, theme_json: object) -> list[str]:
+        def should_keep(candidate: str) -> bool:
+            if not candidate:
+                return False
+            if COLOR_HEX_RE.fullmatch(candidate):
+                return False
+            lowered = candidate.lower()
+            if lowered in {"fallback"}:
+                return False
+            if lowered.startswith("rgb(") or lowered.startswith("rgba("):
+                return False
+            if lowered.startswith("hsl(") or lowered.startswith("hsla("):
+                return False
+            if any(keyword in lowered for keyword in ("serif", "monospace", "cursive", "fantasy")):
+                return False
+            if any(suffix in lowered for suffix in ("px", "rem", "em", "vh", "vw")) and any(
+                ch.isdigit() for ch in candidate
+            ):
+                return False
+            if not any(ch.isalpha() for ch in candidate):
+                return False
+            return True
+
         if not theme_json:
             return []
+
         if isinstance(theme_json, list):
-            return [str(item).strip() for item in theme_json if str(item).strip()]
+            values: list[str] = []
+            for item in theme_json:
+                candidate = str(item).strip()
+                if should_keep(candidate):
+                    values.append(candidate)
+            return values
+
         if isinstance(theme_json, dict):
             values: list[str] = []
             for key, value in theme_json.items():
-                key_str = str(key).strip()
-                if key_str:
-                    values.append(key_str)
+                key_lower = str(key).strip().lower()
+                if key_lower in VISUAL_THEME_KEYS:
+                    continue
                 if isinstance(value, (list, tuple, set)):
-                    values.extend(str(item).strip() for item in value if str(item).strip())
+                    for item in value:
+                        candidate = str(item).strip()
+                        if should_keep(candidate):
+                            values.append(candidate)
                 elif isinstance(value, str):
-                    stripped = value.strip()
-                    if stripped:
-                        values.append(stripped)
-            return [item for item in values if item]
-        return [str(theme_json).strip()]
+                    candidate = value.strip()
+                    if should_keep(candidate):
+                        values.append(candidate)
+            return values
+
+        candidate = str(theme_json).strip()
+        return [candidate] if should_keep(candidate) else []
 
     def _extract_keywords(self, corpus: StoryCorpusSnapshot) -> list[str]:
         text_blobs: list[str] = []
