@@ -203,7 +203,10 @@ class UniverseGraphService:
                         cluster_id=cluster_id,
                         weight=weight,
                         metadata_json={
-                            "related_stories": list(adjacency[story_id].keys())
+                            "related_stories": [
+                                str(related_id)
+                                for related_id in adjacency[story_id].keys()
+                            ]
                         },
                         updated_at=now,
                     )
