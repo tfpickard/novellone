@@ -136,11 +136,14 @@
                 <span>Content</span>
                 <div class="content-pills">
                   {#each event.topAxes as axis (axis.key)}
+                    {@const metadata = CONTENT_AXIS_METADATA[axis.key]}
+                    {@const color = metadata?.color ?? '#475569'}
+                    {@const softColor = color.startsWith('#') && color.length === 7 ? `${color}26` : color}
                     <span
-                      class="content-pill"
-                      style={`--axis-color:${CONTENT_AXIS_METADATA[axis.key].color}; --axis-color-soft:${CONTENT_AXIS_METADATA[axis.key].color}26`}
+                      class={`content-pill${metadata ? '' : ' content-pill--unknown'}`}
+                      style={`--axis-color:${color}; --axis-color-soft:${softColor}`}
                     >
-                      <span class="label">{CONTENT_AXIS_METADATA[axis.key].label}</span>
+                      <span class="label">{metadata?.label ?? axis.key}</span>
                       <span class="value">{axis.value.toFixed(1)}</span>
                     </span>
                   {/each}
@@ -352,6 +355,11 @@
     background: rgba(15, 23, 42, 0.55);
     font-size: 0.75rem;
     gap: 0.5rem;
+  }
+
+  .content-pill--unknown {
+    border-style: dashed;
+    opacity: 0.75;
   }
 
   .content-pill .label {
