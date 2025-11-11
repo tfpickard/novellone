@@ -132,13 +132,16 @@ def _coerce_content_axes(
     if isinstance(value, ContentAxisSettings):
         updates: Mapping[str, Any] = {axis: value.as_dict() for axis in CONTENT_AXIS_KEYS}
     elif isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError as exc:  # noqa: B904
-            raise ValueError("content_axes must be valid JSON") from exc
-        if not isinstance(parsed, Mapping):
-            raise ValueError("content_axes must be a mapping")
-        updates = parsed
+        if not value.strip():
+            updates = {}
+        else:
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError as exc:  # noqa: B904
+                raise ValueError("content_axes must be valid JSON") from exc
+            if not isinstance(parsed, Mapping):
+                raise ValueError("content_axes must be a mapping")
+            updates = parsed
     elif isinstance(value, Mapping):
         updates = value
     else:
