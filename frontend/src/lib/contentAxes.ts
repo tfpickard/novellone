@@ -146,8 +146,9 @@ export function getTopContentAxes(
   const pairs = Object.entries(levels) as Array<[ContentAxisKey, number]>;
   return pairs
     .sort((a, b) => b[1] - a[1])
+    .filter(([, value]) => value > 0)
     .slice(0, limit)
-    .filter(([, value]) => value > 0);
+    .map(([key, value]) => ({ key, value }));
 }
 
 export function formatContentLevel(value: number | null | undefined, digits = 1): string {

@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { getTopContentAxes, CONTENT_AXIS_METADATA } from '$lib/contentAxes';
+  import {
+    getTopContentAxes,
+    CONTENT_AXIS_METADATA,
+    formatContentLevel
+  } from '$lib/contentAxes';
 
   type TimelineChapter = {
     id: string;
@@ -144,7 +148,7 @@
                       style={`--axis-color:${color}; --axis-color-soft:${softColor}`}
                     >
                       <span class="label">{metadata?.label ?? axis.key}</span>
-                      <span class="value">{axis.value.toFixed(1)}</span>
+                      <span class="value">{formatContentLevel(axis.value)}</span>
                     </span>
                   {/each}
                 </div>
