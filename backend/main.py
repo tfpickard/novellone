@@ -446,9 +446,10 @@ class StorySummary(BaseModel):
     ) -> "StorySummary":
         aggregate_stats = None
         estimated_reading_time = None
-        if include_stats and story.chapters:
+        loaded_chapters = list(story.__dict__.get("chapters") or [])
+        if include_stats and loaded_chapters:
             # Calculate aggregate statistics from all chapters
-            chapters_data = [{"content": c.content} for c in story.chapters]
+            chapters_data = [{"content": c.content} for c in loaded_chapters]
             aggregate_stats = calculate_aggregate_stats(chapters_data)
             # Estimate reading time at ~250 words per minute
             total_words = aggregate_stats.get("total_words", 0)
@@ -456,7 +457,7 @@ class StorySummary(BaseModel):
                 estimated_reading_time = max(1, round(total_words / 250))
 
         content_settings = _normalize_content_settings(story.content_settings)
-        content_axis_averages = _aggregate_content_levels(story.chapters)
+        content_axis_averages = _aggregate_content_levels(loaded_chapters)
 
         return cls(
             id=story.id,
@@ -510,8 +511,14 @@ class StoryDetail(StorySummary):
         return cls(
             **StorySummary.from_model(story, include_stats=True, universe=universe).model_dump(),
             completion_reason=story.completion_reason,
-            evaluations=[StoryEvaluationRead.from_model(e) for e in story.evaluations],
-            chapters=[ChapterRead.from_model(c, include_stats=True) for c in story.chapters],
+            evaluations=[
+                StoryEvaluationRead.from_model(e)
+                for e in list(story.__dict__.get("evaluations") or [])
+            ],
+            chapters=[
+                ChapterRead.from_model(c, include_stats=True)
+                for c in list(story.__dict__.get("chapters") or [])
+            ],
             entity_overrides=override_payload,
         )
 
