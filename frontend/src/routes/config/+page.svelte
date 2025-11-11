@@ -800,7 +800,18 @@
   }
 
   function axisIsDirty(axis: ContentAxisKey): boolean {
-    return axisFields.some((field) => axisDirtyFlags[axis][field]);
+    const baseline = createAxisInputEntry(contentAxes[axis]);
+    return axisFields.some((field) => {
+      const raw = axisInputs[axis][field];
+      if (axisErrors[axis][field]) {
+        return raw.trim() !== baseline[field];
+      }
+      if (!raw.trim()) {
+        return false;
+      }
+      const parsed = parseAxisValue(field, raw);
+      return !axisValueEquals(contentAxes[axis][field], parsed, field);
+    });
   }
 
   function handleAxisInput(axis: ContentAxisKey, field: AxisField, raw: string) {
