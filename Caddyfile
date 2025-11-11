@@ -11,7 +11,28 @@ hurl.lol, www.hurl.lol {
     # Email for Let's Encrypt notifications
     # Set this via environment variable or command line:
     # caddy run --email your@email.com
-    
+
+    rate_limit {
+        zone api_per_ip {
+            key {remote_host}
+            window 1m
+            average 60
+            burst 120
+        }
+        zone auth_per_ip {
+            key {remote_host}
+            window 1m
+            average 15
+            burst 30
+        }
+        zone ws_per_ip {
+            key {remote_host}
+            window 1m
+            average 30
+            burst 60
+        }
+    }
+
     # Security headers
     header {
         # HSTS
@@ -34,6 +55,7 @@ hurl.lol, www.hurl.lol {
 
     # WebSocket endpoint - must be first to match before /api/
     handle /ws/* {
+        rate_limit ws_per_ip
         reverse_proxy localhost:8000 {
             # WebSocket configuration
             header_up Host {host}
@@ -45,6 +67,7 @@ hurl.lol, www.hurl.lol {
 
     # API endpoints
     handle /api/* {
+        rate_limit api_per_ip
         reverse_proxy localhost:8000 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
@@ -55,6 +78,7 @@ hurl.lol, www.hurl.lol {
 
     # Auth endpoints
     handle /auth/* {
+        rate_limit auth_per_ip
         reverse_proxy localhost:8000 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
