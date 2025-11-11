@@ -13,40 +13,58 @@
     [metric.best, metric.worst].filter(Boolean) as MetricEntry[]
   );
 
+  const formatStatus = (status: string) =>
+    status ? status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : '';
+
+  const normalizeGenreLabel = (value: string) => value.trim();
+  const genreKey = (value: string) => normalizeGenreLabel(value).toLowerCase();
+
   const availableStatuses = Array.from(new Set(allEntries.map((entry) => entry.status))).sort();
-  const availableGenres = Array.from(
-    new Set(
-      allEntries.flatMap((entry) => {
-        if (!entry.genre_tags) return [];
-        return entry.genre_tags;
-      })
-    )
-  ).sort();
 
-  const genreOccurrences = availableGenres.map((genre) => {
-    const count = allEntries.reduce((total, entry) => {
-      return total + ((entry.genre_tags ?? []).includes(genre) ? 1 : 0);
-    }, 0);
-    return { genre, count };
-  });
+  const genreAggregates = new Map<string, { label: string; count: number }>();
+  for (const entry of allEntries) {
+    for (const tag of entry.genre_tags ?? []) {
+      if (!tag) continue;
+      const label = normalizeGenreLabel(tag);
+      if (!label) continue;
+      const key = genreKey(label);
+      const aggregate = genreAggregates.get(key);
+      if (aggregate) {
+        aggregate.count += 1;
+      } else {
+        genreAggregates.set(key, { label, count: 1 });
+      }
+    }
+  }
 
-  const maxGenreCount = genreOccurrences.reduce((max, { count }) => Math.max(max, count), 0) || 1;
-
-  const genreCloud = genreOccurrences.map(({ genre, count }) => ({
-    genre,
-    count,
-    weight: 0.75 + (count / maxGenreCount) * 0.75
+  const genreCloudBase = Array.from(genreAggregates.entries()).map(([key, { label, count }]) => ({
+    key,
+    label,
+    count
   }));
 
-  let selectedStatus = 'all';
-  let selectedGenre = 'all';
+  genreCloudBase.sort((a, b) => {
+    if (a.count !== b.count) {
+      return b.count - a.count;
+    }
+    return a.label.localeCompare(b.label);
+  });
+
+  const maxGenreCount = genreCloudBase.reduce((max, { count }) => Math.max(max, count), 0) || 1;
+
+  const genreCloud = genreCloudBase.map(({ key, label, count }) => ({
+    key,
+    label,
+    count,
+    weight: 0.85 + (count / maxGenreCount) * 0.75
+  }));
+
+  let selectedStatus: string = 'all';
+  let selectedGenre: string = 'all';
   let showPriorityOnly = false;
 
   let queueing: Record<string, boolean> = {};
   let queueFeedback: Record<string, { type: 'success' | 'error'; message: string } | null> = {};
-
-  const formatStatus = (status: string) =>
-    status ? status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : '';
 
   const formatValue = (metric: Metric, entry: MetricEntry | null) => {
     if (!entry || entry.value === null || entry.value === undefined) {
@@ -118,7 +136,7 @@
       return false;
     }
     if (selectedGenre !== 'all') {
-      const genres = entry.genre_tags ?? [];
+      const genres = (entry.genre_tags ?? []).map((genre) => genreKey(genre));
       if (!genres.includes(selectedGenre)) {
         return false;
       }
@@ -225,10 +243,14 @@
 
   const statusLabel = (value: string) => (value === 'all' ? 'All statuses' : formatStatus(value));
 
-  const genreLabel = (value: string) => (value === 'all' ? 'All genres' : value);
+  $: selectedGenreLabel =
+    selectedGenre === 'all'
+      ? null
+      : genreCloud.find((entry) => entry.key === selectedGenre)?.label ?? null;
 
   const toggleGenreFilter = (genre: string) => {
-    selectedGenre = selectedGenre === genre ? 'all' : genre;
+    const key = genreKey(genre);
+    selectedGenre = selectedGenre === key ? 'all' : key;
   };
 
   $: filteredSections = groupedEntries
@@ -271,17 +293,6 @@
             {/each}
           </select>
         </label>
-        {#if availableGenres.length > 0}
-          <label>
-            <span>Genre</span>
-            <select bind:value={selectedGenre}>
-              <option value="all">{genreLabel('all')}</option>
-              {#each availableGenres as genre}
-                <option value={genre}>{genreLabel(genre)}</option>
-              {/each}
-            </select>
-          </label>
-        {/if}
       </div>
       <label class="toggle">
         <input type="checkbox" bind:checked={showPriorityOnly} />
@@ -292,23 +303,41 @@
     {#if genreCloud.length > 0}
       <section class="tag-cloud" aria-label="Browse stories by tag">
         <div class="tag-cloud-header">
-          <h2>Browse by tag</h2>
+          <div class="tag-cloud-title">
+            <h2>Browse by tag</h2>
+            {#if selectedGenreLabel}
+              <span class="active-tag-label" aria-live="polite">
+                Showing stories tagged <strong>{selectedGenreLabel}</strong>
+              </span>
+            {/if}
+          </div>
           {#if selectedGenre !== 'all'}
             <button type="button" class="clear-tags" on:click={() => (selectedGenre = 'all')}>
-              Clear selection
+              Clear tag filter
             </button>
           {/if}
         </div>
-        <div class="tag-cloud-list">
-          {#each genreCloud as { genre, count, weight }}
+        <div class="tag-cloud-list" role="list">
+          <button
+            type="button"
+            class={`tag-cloud-item all ${selectedGenre === 'all' ? 'active' : ''}`}
+            style="--tag-weight: 1"
+            aria-pressed={selectedGenre === 'all'}
+            role="listitem"
+            on:click={() => (selectedGenre = 'all')}
+          >
+            <span class="tag-label">All tags</span>
+          </button>
+          {#each genreCloud as { key, label, count, weight }}
             <button
               type="button"
-              class={`tag-cloud-item ${selectedGenre === genre ? 'active' : ''}`}
+              class={`tag-cloud-item ${selectedGenre === key ? 'active' : ''}`}
               style={`--tag-weight: ${weight}`}
-              aria-pressed={selectedGenre === genre}
-              on:click={() => toggleGenreFilter(genre)}
+              aria-pressed={selectedGenre === key}
+              role="listitem"
+              on:click={() => toggleGenreFilter(key)}
             >
-              <span class="tag-label">{genre}</span>
+              <span class="tag-label">{label}</span>
               <span class="tag-count">{count}</span>
             </button>
           {/each}
@@ -388,15 +417,19 @@
                           {#if metric.best.genre_tags?.length}
                             <div class="story-genres">
                               {#each metric.best.genre_tags as genre}
-                                <button
-                                  type="button"
-                                  class={`story-genre ${selectedGenre === genre ? 'active' : ''}`}
-                                  aria-pressed={selectedGenre === genre}
-                                  on:click={() => toggleGenreFilter(genre)}
-                                  title={`Show stories tagged ${genre}`}
-                                >
-                                  {genre}
-                                </button>
+                                {@const label = normalizeGenreLabel(genre)}
+                                {@const key = genreKey(genre)}
+                                {#if label}
+                                  <button
+                                    type="button"
+                                    class={`story-genre ${selectedGenre === key ? 'active' : ''}`}
+                                    aria-pressed={selectedGenre === key}
+                                    on:click={() => toggleGenreFilter(label)}
+                                    title={`Show stories tagged ${label}`}
+                                  >
+                                    {label}
+                                  </button>
+                                {/if}
                               {/each}
                             </div>
                           {/if}
@@ -502,15 +535,19 @@
                           {#if metric.worst.genre_tags?.length}
                             <div class="story-genres">
                               {#each metric.worst.genre_tags as genre}
-                                <button
-                                  type="button"
-                                  class={`story-genre ${selectedGenre === genre ? 'active' : ''}`}
-                                  aria-pressed={selectedGenre === genre}
-                                  on:click={() => toggleGenreFilter(genre)}
-                                  title={`Show stories tagged ${genre}`}
-                                >
-                                  {genre}
-                                </button>
+                                {@const label = normalizeGenreLabel(genre)}
+                                {@const key = genreKey(genre)}
+                                {#if label}
+                                  <button
+                                    type="button"
+                                    class={`story-genre ${selectedGenre === key ? 'active' : ''}`}
+                                    aria-pressed={selectedGenre === key}
+                                    on:click={() => toggleGenreFilter(label)}
+                                    title={`Show stories tagged ${label}`}
+                                  >
+                                    {label}
+                                  </button>
+                                {/if}
                               {/each}
                             </div>
                           {/if}
@@ -652,12 +689,27 @@
     gap: 1rem;
   }
 
-  .tag-cloud-header h2 {
+  .tag-cloud-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .tag-cloud-title h2 {
     margin: 0;
     font-size: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: rgba(226, 232, 240, 0.85);
+  }
+
+  .active-tag-label {
+    font-size: 0.85rem;
+    color: rgba(148, 163, 184, 0.85);
+  }
+
+  .active-tag-label strong {
+    color: #f8fafc;
   }
 
   .clear-tags {
@@ -695,6 +747,11 @@
     font-size: calc(0.85rem * var(--tag-weight));
     line-height: 1;
     transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+  }
+
+  .tag-cloud-item.all {
+    background: rgba(148, 163, 184, 0.16);
+    color: rgba(226, 232, 240, 0.9);
   }
 
   .tag-cloud-item .tag-count {
