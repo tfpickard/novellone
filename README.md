@@ -37,8 +37,9 @@ Hurl Unmasks Recursive Literature Leaking Out Light is a containerized platform 
 - **Autonomous Story Pool** – Keeps the number of active stories between configurable minimum and maximum bounds.
 - **AI Story Generation** – Uses OpenAI Chat Completions for premises, chapters, themes, and critical evaluations.
 - **Chaos Parameters** – Assigns seeded absurdity/surrealism/ridiculousness/insanity values that grow with each chapter.
+- **Content Intensity Controls** – Ten-axis content settings (e.g., sexual content, violence, language, drugs, horror) with average levels, per-chapter momentum, and premise remix multipliers that steer prompts, scoring, and cover art tone.
 - **Quality Evaluation Loop** – Scores coherence, novelty, engagement, and pacing. Stories that fall below `quality_score_min` are concluded.
-- **Cover Art Synthesis** – Generates DALL·E book covers automatically when a story completes.
+- **Cover Art Synthesis** – Generates DALL·E book covers automatically when a story completes and periodically backfills missing images.
 - **Live Updates** – Uses WebSockets to push new chapters/completions to connected clients.
 - **Visual Theming** – Applies per-story CSS variables (colors, fonts, animations) sourced from AI-generated theme JSON.
 - **Story Intelligence Dashboards** – Interactive timeline + “DNA” radar views surface pacing, chaos vectors, and evaluation health for each narrative.
@@ -80,11 +81,11 @@ timelines, and stats dashboards.
 ## Story Lifecycle
 
 1. **Spawn** – The background worker ensures at least `min_active_stories` exist. If at capacity, it gracefully completes the oldest active story to free a slot.
-2. **Premise & Theme** – `story_generator.spawn_new_story` requests a novel premise + theme JSON, seeding chaos parameters.
-3. **Chapter Generation** – At every `chapter_interval_seconds`, active stories receive new chapters that escalate absurdity coefficients.
+2. **Premise & Theme** – `story_generator.spawn_new_story` requests a novel premise + theme JSON, seeding chaos parameters and the ten structured content axes.
+3. **Chapter Generation** – At every `chapter_interval_seconds`, active stories receive new chapters that escalate absurdity coefficients and report per-axis content readings.
 4. **Quality Evaluation** – Every `evaluation_interval_chapters`, stories are scored via `story_evaluator.evaluate_story`.
 5. **Completion** – Stories terminate when quality dips below the threshold, reach `max_chapters_per_story`, or are manually killed.
-6. **Cover Art** – Completed stories without cover art trigger a DALL·E request to synthesize a themed book cover.
+6. **Cover Art** – Completed stories without cover art trigger a DALL·E request, and a scheduled backfill job keeps scanning for any remaining gaps.
 7. **Replacement** – Newly completed stories are removed from the active pool, allowing fresh narratives to spawn.
 
 ---
@@ -225,7 +226,7 @@ After both services are running, browse to `http://localhost:3000/login` to auth
 - **Hot Reloading** – APScheduler worker restarts automatically in development due to `uvicorn --reload`.
 - **Database Migrations** – New schema changes require Alembic revisions (`alembic revision --autogenerate -m "message"`).
 - **Formatting & Linting** – Configure your editor; repository does not enforce tooling yet.
-- **Testing** – Automated tests are not bundled. Consider adding FastAPI, SQLAlchemy, and end-to-end tests for safety.
+- **Testing** – Run `pytest backend/tests -q` for backend checks and `npm test`/`npm run build` for frontend verification.
 
 ---
 
@@ -236,9 +237,10 @@ Key tables (see `backend/models.py`):
 - `stories`
   - Metadata: title, premise, status, timestamps, cover image URL
   - Chaos parameters: initial + per-chapter increments for absurdity/surrealism/ridiculousness/insanity
+  - Content settings: per-axis averages, per-chapter momentum, and premise remix multipliers for ten content categories
   - Relationships: `chapters`, `evaluations`
 - `chapters`
-  - Chapter number, content, generation metadata, per-chapter chaos readings
+  - Chapter number, content, generation metadata, per-chapter chaos readings, ten-axis content intensity readings
 - `story_evaluations`
   - Scores for coherence, novelty, engagement, pacing, boolean `should_continue`
   - Evaluation reasoning and issues list (JSONB)
@@ -255,8 +257,8 @@ Key tables (see `backend/models.py`):
 
 - `GET /api/stories` – Paginated story list (filter by status)
 - `GET /api/stories/{id}` – Story detail with chapters & evaluations
-- `GET /api/stats` – Aggregate counters, recent chapters, chaos averages
-- `GET /api/config` – Current runtime configuration
+- `GET /api/stats` – Aggregate counters, recent chapters, chaos averages, and aggregated content intensity metrics
+- `GET /api/config` – Current runtime configuration, including content axes and cover-art backfill status
 
 ### Admin Endpoints
 
@@ -289,6 +291,7 @@ Key tables (see `backend/models.py`):
   - Completes stories at max length or on poor quality.
 - Maintains active story count, spawning replacements as needed.
 - Emits WebSocket events whenever new chapters or completions occur.
+- Periodically scans for completed stories missing cover art and generates new images in configurable batches.
 
 ---
 
