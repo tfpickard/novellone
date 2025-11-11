@@ -722,8 +722,27 @@
 
   .story-pair {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .story-pair .story-card + .story-card {
+    position: relative;
+  }
+
+  .story-pair .story-card + .story-card::before {
+    content: '';
+    position: absolute;
+    top: -0.75rem;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      rgba(148, 163, 184, 0),
+      rgba(148, 163, 184, 0.3),
+      rgba(148, 163, 184, 0)
+    );
   }
 
   .story-card {
