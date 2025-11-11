@@ -32,7 +32,11 @@ async def backfill_cover_images():
         for story in stories:
             logger.info("Generating cover image for story: %s", story.title)
             try:
-                cover_url = await generate_cover_image(story.title, story.premise)
+                cover_url = await generate_cover_image(
+                    story.title,
+                    story.premise,
+                    story.content_settings,
+                )
                 if cover_url:
                     story.cover_image_url = cover_url
                     await session.flush()

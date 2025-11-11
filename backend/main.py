@@ -708,7 +708,11 @@ async def kill_story(
         if not story.cover_image_url:
             logger.info("Generating cover image for manually killed story: %s", story.title)
             try:
-                cover_url = await generate_cover_image(story.title, story.premise)
+                cover_url = await generate_cover_image(
+                    story.title,
+                    story.premise,
+                    story.content_settings,
+                )
                 if cover_url:
                     story.cover_image_url = cover_url
                     logger.info("✓ Cover image saved for manually killed story %s", story.title)
@@ -1458,7 +1462,11 @@ async def admin_spawn_story(
             # Generate cover image for the terminated story
             if not oldest_story.cover_image_url:
                 try:
-                    cover_url = await generate_cover_image(oldest_story.title, oldest_story.premise)
+                    cover_url = await generate_cover_image(
+                        oldest_story.title,
+                        oldest_story.premise,
+                        oldest_story.content_settings,
+                    )
                     if cover_url:
                         oldest_story.cover_image_url = cover_url
                 except Exception as exc:  # noqa: BLE001
@@ -1485,6 +1493,7 @@ async def admin_spawn_story(
         narrative_perspective=payload.get("narrative_perspective"),
         tone=payload.get("tone"),
         genre_tags=payload.get("genre_tags"),
+        content_settings=payload.get("content_settings", {}),
     )
     session.add(story)
     await session.flush()
@@ -1558,7 +1567,11 @@ async def admin_backfill_cover_images(
     for story in stories:
         logger.info("Generating cover image for story: %s", story.title)
         try:
-            cover_url = await generate_cover_image(story.title, story.premise)
+            cover_url = await generate_cover_image(
+                story.title,
+                story.premise,
+                story.content_settings,
+            )
             if cover_url:
                 story.cover_image_url = cover_url
                 await session.flush()

@@ -6,7 +6,7 @@ import time
 from collections import Counter
 from datetime import datetime
 from statistics import mean
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from openai import AsyncOpenAI, OpenAIError
 from sqlalchemy import func, select
@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import get_settings
-from config_store import RuntimeConfig, get_runtime_config
+from config_store import (
+    CONTENT_AXIS_KEYS,
+    ContentAxisSettings,
+    RuntimeConfig,
+    get_runtime_config,
+)
 from database import get_session
 from models import Chapter, Story, SystemConfig
 
@@ -25,6 +30,263 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 _PROMPT_STATE_KEY = "premise_prompt_state"
 _MAX_DYNAMIC_DIRECTIVES = 4
+
+_CONTENT_AXIS_LABELS: dict[str, str] = {
+    "sexual_content": "Sexual content/intimacy",
+    "violence": "Violence/combat intensity",
+    "strong_language": "Strong language/profanity",
+    "drug_use": "Drug and substance use",
+    "horror_suspense": "Horror and suspense",
+    "gore_graphic_imagery": "Gore and graphic imagery",
+    "romance_focus": "Romantic relationship focus",
+    "crime_illicit_activity": "Crime and illicit activity",
+    "political_ideology": "Political or ideological themes",
+    "supernatural_occult": "Supernatural or occult elements",
+}
+
+
+def _ordered_content_axes(extra_keys: Sequence[str] | None = None) -> list[str]:
+    ordered = list(CONTENT_AXIS_KEYS)
+    if not extra_keys:
+        return ordered
+    seen = set(ordered)
+    for axis in extra_keys:
+        if axis in seen:
+            continue
+        ordered.append(axis)
+        seen.add(axis)
+    return ordered
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _coerce_float(value: Any, fallback: float) -> float:
+    if value is None:
+        return float(fallback)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return float(fallback)
+        try:
+            return float(stripped)
+        except ValueError:
+            return float(fallback)
+    return float(fallback)
+
+
+def _sanitize_content_settings(
+    payload: Any,
+    fallback: Mapping[str, Mapping[str, float]] | None = None,
+) -> dict[str, dict[str, float]]:
+    base: Mapping[str, Mapping[str, float]] = fallback or {}
+    mapping = payload if isinstance(payload, Mapping) else {}
+    axis_keys = set(base.keys()) | set(mapping.keys())
+    sanitized: dict[str, dict[str, float]] = {}
+    for axis in _ordered_content_axes(axis_keys):
+        axis_payload = mapping.get(axis)
+        defaults = base.get(axis, {})
+        average_level = _clamp(
+            _coerce_float(
+                axis_payload.get("average_level") if isinstance(axis_payload, Mapping) else None,
+                defaults.get("average_level", 0.0),
+            ),
+            0.0,
+            10.0,
+        )
+        momentum = _clamp(
+            _coerce_float(
+                axis_payload.get("momentum") if isinstance(axis_payload, Mapping) else None,
+                defaults.get("momentum", 0.0),
+            ),
+            -1.0,
+            1.0,
+        )
+        multiplier = _clamp(
+            _coerce_float(
+                axis_payload.get("premise_multiplier") if isinstance(axis_payload, Mapping) else None,
+                defaults.get("premise_multiplier", 1.0),
+            ),
+            0.0,
+            10.0,
+        )
+        sanitized[axis] = {
+            "average_level": round(average_level, 4),
+            "momentum": round(momentum, 4),
+            "premise_multiplier": round(multiplier, 4),
+        }
+    return sanitized
+
+
+def _generate_story_content_settings(
+    config: RuntimeConfig,
+) -> dict[str, dict[str, float]]:
+    generated: dict[str, dict[str, float]] = {}
+    axes = _ordered_content_axes(config.content_axes.keys())
+    for axis in axes:
+        axis_config: ContentAxisSettings | None = config.content_axes.get(axis)
+        if axis_config is None:
+            generated[axis] = {
+                "average_level": 0.0,
+                "momentum": 0.0,
+                "premise_multiplier": 1.0,
+            }
+            continue
+        base_average = _clamp(axis_config.average_level, 0.0, 10.0)
+        base_momentum = _clamp(axis_config.momentum, -1.0, 1.0)
+        base_multiplier = _clamp(axis_config.premise_multiplier, 0.0, 10.0)
+        jittered_average = _clamp(base_average + random.uniform(-1.0, 1.0), 0.0, 10.0)
+        jittered_momentum = _clamp(base_momentum + random.uniform(-0.15, 0.15), -1.0, 1.0)
+        jittered_multiplier = _clamp(
+            base_multiplier * random.uniform(0.85, 1.15),
+            0.0,
+            10.0,
+        )
+        generated[axis] = {
+            "average_level": round(jittered_average, 3),
+            "momentum": round(jittered_momentum, 3),
+            "premise_multiplier": round(jittered_multiplier, 3),
+        }
+    return generated
+
+
+def _momentum_description(momentum: float) -> str:
+    if momentum > 0.35:
+        return "strong upward momentum (intensifies each chapter)"
+    if momentum > 0.1:
+        return "slight upward momentum"
+    if momentum < -0.35:
+        return "strong downward momentum (softens each chapter)"
+    if momentum < -0.1:
+        return "slight downward momentum"
+    return "steady intensity"
+
+
+def _momentum_short(momentum: float) -> str:
+    if momentum > 0.2:
+        return "intensifying"
+    if momentum > 0.05:
+        return "rising"
+    if momentum < -0.2:
+        return "diminishing"
+    if momentum < -0.05:
+        return "softening"
+    return "steady"
+
+
+def _intensity_descriptor(level: float) -> str:
+    if level >= 8.5:
+        return "extreme"
+    if level >= 6.5:
+        return "high"
+    if level >= 4.5:
+        return "moderate"
+    if level >= 2.5:
+        return "low"
+    return "minimal"
+
+
+def _format_content_prompt_lines(
+    content_settings: Mapping[str, Mapping[str, float]]
+) -> tuple[str, str]:
+    if not content_settings:
+        return "", ""
+    ordered_axes = _ordered_content_axes(content_settings.keys())
+    descriptive_lines: list[str] = []
+    json_lines: list[str] = []
+    for axis in ordered_axes:
+        values = content_settings.get(axis)
+        if not values:
+            continue
+        label = _CONTENT_AXIS_LABELS.get(axis, axis.replace("_", " ").title())
+        average_level = float(values.get("average_level", 0.0))
+        momentum = float(values.get("momentum", 0.0))
+        multiplier = float(values.get("premise_multiplier", 1.0))
+        descriptive_lines.append(
+            f"- {label}: target average {average_level:.1f}/10, { _momentum_description(momentum) }, premise emphasis x{multiplier:.2f}"
+        )
+        json_lines.append(
+            f'    "{axis}": {{"average_level": {average_level:.3f}, "momentum": {momentum:.3f}, "premise_multiplier": {multiplier:.3f}}}'
+        )
+    content_block = "\n".join(descriptive_lines)
+    json_block = ",\n".join(json_lines)
+    return content_block, json_block
+
+
+def _describe_cover_axes(
+    content_settings: Mapping[str, Mapping[str, float]],
+) -> str:
+    if not content_settings:
+        return ""
+    ordered_axes = _ordered_content_axes(content_settings.keys())
+    scored_axes: list[tuple[str, float]] = []
+    for axis in ordered_axes:
+        values = content_settings.get(axis)
+        if not values:
+            continue
+        scored_axes.append((axis, float(values.get("average_level", 0.0))))
+    top_axes = sorted(scored_axes, key=lambda item: item[1], reverse=True)[:3]
+    if not top_axes:
+        return ""
+    descriptions: list[str] = []
+    for axis, average in top_axes:
+        label = _CONTENT_AXIS_LABELS.get(axis, axis.replace("_", " ").title())
+        intensity = _intensity_descriptor(average)
+        momentum = float(
+            content_settings.get(axis, {}).get("momentum", 0.0)
+        )
+        trend = _momentum_short(momentum)
+        descriptions.append(
+            f"{label}: {intensity} presence, {trend} across chapters"
+        )
+    return "; ".join(descriptions)
+
+
+def _get_story_content_settings(story: Story) -> dict[str, dict[str, float]]:
+    raw = story.content_settings if isinstance(story.content_settings, Mapping) else {}
+    return _sanitize_content_settings(raw, raw)
+
+
+def _calculate_expected_content_levels(
+    story: Story,
+    recent_chapters: Sequence[Chapter],
+    story_settings: Mapping[str, Mapping[str, float]],
+) -> dict[str, float]:
+    expected: dict[str, float] = {}
+    previous_levels: Mapping[str, Any] | None = None
+    if recent_chapters:
+        last_chapter = recent_chapters[-1]
+        if isinstance(last_chapter.content_levels, Mapping):
+            previous_levels = last_chapter.content_levels
+    for axis in _ordered_content_axes(story_settings.keys()):
+        axis_settings = story_settings.get(axis) or {}
+        average_level = float(axis_settings.get("average_level", 0.0))
+        momentum = float(axis_settings.get("momentum", 0.0))
+        baseline = average_level
+        if previous_levels is not None:
+            previous_value = previous_levels.get(axis)
+            baseline = _clamp(_coerce_float(previous_value, average_level), 0.0, 10.0)
+            baseline += momentum
+        expected[axis] = round(_clamp(baseline, 0.0, 10.0), 3)
+    return expected
+
+
+def _sanitize_content_levels(
+    payload: Any,
+    expected: Mapping[str, float],
+) -> dict[str, float]:
+    mapping = payload if isinstance(payload, Mapping) else {}
+    sanitized: dict[str, float] = {}
+    axis_keys = set(expected.keys()) | set(mapping.keys())
+    for axis in _ordered_content_axes(axis_keys):
+        fallback = float(expected.get(axis, 0.0))
+        raw_value = mapping.get(axis) if isinstance(mapping, Mapping) else None
+        sanitized_value = _clamp(_coerce_float(raw_value, fallback), 0.0, 10.0)
+        sanitized[axis] = round(sanitized_value, 3)
+    return sanitized
 
 _HURLLOL_LEXICON: dict[str, tuple[str, ...]] = {
     "H": (
@@ -85,7 +347,9 @@ def _clean_directives(directives: Sequence[str]) -> list[str]:
 
 
 def _render_premise_prompt(
-    style_instruction: str, directives: Sequence[str]
+    style_instruction: str,
+    directives: Sequence[str],
+    content_settings: Mapping[str, Mapping[str, float]] | None = None,
 ) -> str:
     cleaned_directives = _clean_directives(directives)
     directives_block = ""
@@ -95,6 +359,42 @@ def _render_premise_prompt(
             "\nDynamic variation objectives (embrace novelty over safety, even if scores dip a little):\n"
             f"{directive_lines}\n"
         )
+
+    content_block = ""
+    content_json_block = ""
+    if content_settings:
+        descriptive_lines, json_lines = _format_content_prompt_lines(content_settings)
+        if descriptive_lines:
+            content_block = (
+                "\nContent intensity targets (scale 0-10). Always remain within OpenAI usage policies; all depictions must stay implicit, allusive, and policy-safe:\n"
+                f"{descriptive_lines}\n"
+            )
+        if json_lines:
+            content_json_block = (
+                '  "content_settings": {\n'
+                f"{json_lines}\n"
+                "  },\n"
+            )
+    if not content_json_block:
+        content_json_block = (
+            '  "content_settings": {\n'
+            '    "sexual_content": {"average_level": 2.0, "momentum": 0.0, "premise_multiplier": 1.0}\n'
+            "  },\n"
+        )
+
+    json_structure = (
+        "{\n"
+        '  "title": "Your Unique Creative Title",\n'
+        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
+        '  "themes": ["theme1", "theme2"],\n'
+        '  "setting": "Brief setting description",\n'
+        '  "central_conflict": "The main conflict or problem",\n'
+        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
+        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
+        '  "genre_tags": ["tag1", "tag2", "tag3"],\n'
+        f"{content_json_block}"
+        "}\n\n"
+    )
 
     return (
         "Generate a unique, creative science fiction story premise.\n\n"
@@ -108,18 +408,10 @@ def _render_premise_prompt(
         f"{style_instruction}\n"
         "- DO NOT mention these authors by name in the title or premise\n"
         "- Let their influence guide the tone, perspective, themes, and narrative approach\n"
-        f"{directives_block}\n"
+        f"{directives_block}"
+        f"{content_block}"
         "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
-        "{\n"
-        '  "title": "Your Unique Creative Title",\n'
-        '  "premise": "A detailed, engaging premise that describes the story concept",\n'
-        '  "themes": ["theme1", "theme2"],\n'
-        '  "setting": "Brief setting description",\n'
-        '  "central_conflict": "The main conflict or problem",\n'
-        '  "narrative_perspective": "first-person" or "third-person-limited" or "third-person-omniscient" or "second-person",\n'
-        '  "tone": "A brief description of the story tone (e.g., dark, humorous, philosophical, melancholic, satirical, etc.)",\n'
-        '  "genre_tags": ["tag1", "tag2", "tag3"] // Additional genre/style descriptors like "existential", "noir", "absurdist", "dystopian", etc.\n'
-        "}\n\n"
+        f"{json_structure}"
         "Example titles for inspiration (create something different):\n"
         "- Echoes of the Quantum Conductor\n"
         "- The Symphony of Interfaces\n"
@@ -729,6 +1021,8 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
         insanity_initial, insanity_increment,
     )
 
+    content_settings = _generate_story_content_settings(config)
+
     # List of famous 20th century authors with distinctive styles
     famous_authors = [
         "Franz Kafka", "Jorge Luis Borges", "Italo Calvino", "Gabriel García Márquez",
@@ -756,7 +1050,7 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
 
     prompt_state = await _load_current_prompt_state()
     directives = prompt_state.get("directives", []) if isinstance(prompt_state, dict) else []
-    prompt = _render_premise_prompt(style_instruction, directives)
+    prompt = _render_premise_prompt(style_instruction, directives, content_settings)
     raw_strength = (
         prompt_state.get("variation_strength")
         if isinstance(prompt_state, dict)
@@ -835,6 +1129,9 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
                         parsed["tone"] = "mysterious"
                     if "genre_tags" not in parsed:
                         parsed["genre_tags"] = []
+                    parsed["content_settings"] = _sanitize_content_settings(
+                        parsed.get("content_settings"), content_settings
+                    )
                     return parsed
                 else:
                     logger.warning(
@@ -914,6 +1211,7 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
                 "surrealism_increment": surrealism_increment,
                 "ridiculousness_increment": ridiculousness_increment,
                 "insanity_increment": insanity_increment,
+                "content_settings": content_settings,
             }
         except Exception as exc:
             logger.exception(
@@ -949,6 +1247,7 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
         "surrealism_increment": surrealism_increment,
         "ridiculousness_increment": ridiculousness_increment,
         "insanity_increment": insanity_increment,
+        "content_settings": content_settings,
     }
 
 
@@ -1078,7 +1377,7 @@ async def generate_chapter(
     expected_surrealism = story.surrealism_initial + (chapter_number - 1) * story.surrealism_increment
     expected_ridiculousness = story.ridiculousness_initial + (chapter_number - 1) * story.ridiculousness_increment
     expected_insanity = story.insanity_initial + (chapter_number - 1) * story.insanity_increment
-    
+
     logger.info(
         "Chapter %d chaos parameters: absurdity=%.3f, surrealism=%.3f, ridiculousness=%.3f, insanity=%.3f",
         chapter_number,
@@ -1087,10 +1386,50 @@ async def generate_chapter(
         expected_ridiculousness,
         expected_insanity,
     )
-    
+
     context = "\n\n".join(
         f"Chapter {chapter.chapter_number}: {chapter.content}"
         for chapter in recent_chapters
+    )
+
+    story_content_settings = _get_story_content_settings(story)
+    expected_content_levels = _calculate_expected_content_levels(
+        story,
+        recent_chapters,
+        story_content_settings,
+    )
+    content_guidance_lines: list[str] = []
+    for axis in _ordered_content_axes(story_content_settings.keys()):
+        if axis not in expected_content_levels:
+            continue
+        label = _CONTENT_AXIS_LABELS.get(axis, axis.replace("_", " ").title())
+        target_value = expected_content_levels[axis]
+        descriptor = _intensity_descriptor(target_value)
+        trend = _momentum_short(
+            float(story_content_settings.get(axis, {}).get("momentum", 0.0))
+        )
+        content_guidance_lines.append(
+            f"- {label}: target intensity {target_value:.2f}/10 ({descriptor}, {trend})"
+        )
+    content_guidance_block = ""
+    if content_guidance_lines:
+        joined = "\n".join(content_guidance_lines)
+        content_guidance_block = (
+            "CONTENT AXES for this chapter (scale 0-10; keep depictions implicit, suggestive, and strictly within OpenAI usage policies—no explicit scenes):\n"
+            f"{joined}\n\n"
+        )
+
+    content_levels_example_lines: list[str] = []
+    for axis in _ordered_content_axes(expected_content_levels.keys()):
+        content_levels_example_lines.append(
+            f'    "{axis}": {expected_content_levels[axis]:.3f}'
+        )
+    if not content_levels_example_lines:
+        content_levels_example_lines.append('    "sexual_content": 0.000')
+    content_levels_example = (
+        '  "content_levels": {\n'
+        + ",\n".join(content_levels_example_lines)
+        + "\n  }\n"
     )
 
     # Build style instruction if authors are specified
@@ -1124,17 +1463,19 @@ async def generate_chapter(
         f"- Ridiculousness: {expected_ridiculousness:.3f} (comedic absurdity, over-the-top scenarios)\n"
         f"- Insanity: {expected_insanity:.3f} (chaotic, unhinged, breaking conventions)\n\n"
         "Write the chapter with these parameters in mind, making it progressively more chaotic as specified.\n\n"
+        f"{content_guidance_block}"
         "After writing the chapter, respond with ONLY valid JSON in this exact structure:\n"
         "{\n"
         '  "chapter_content": "Your full chapter text here...",\n'
         f'  "absurdity": {expected_absurdity:.3f},\n'
         f'  "surrealism": {expected_surrealism:.3f},\n'
         f'  "ridiculousness": {expected_ridiculousness:.3f},\n'
-        f'  "insanity": {expected_insanity:.3f}\n'
+        f'  "insanity": {expected_insanity:.3f},\n'
+        f"{content_levels_example}"
         "}\n\n"
-        "Return the EXACT chaos parameter values provided above in your response."
+        "Return the EXACT chaos parameter values provided above in your response. Provide the \"content_levels\" readings on a 0-10 scale to reflect how intense each axis became in this chapter."
     )
-    
+
     start = time.perf_counter()
     text, usage = await _call_openai(
         _settings.openai_model,
@@ -1151,12 +1492,18 @@ async def generate_chapter(
     actual_ridiculousness = expected_ridiculousness
     actual_insanity = expected_insanity
     
+    sanitized_content_levels = _sanitize_content_levels(
+        {}, expected_content_levels
+    )
     if parsed and isinstance(parsed, dict):
         chapter_content = parsed.get("chapter_content", text.strip())
         actual_absurdity = parsed.get("absurdity", expected_absurdity)
         actual_surrealism = parsed.get("surrealism", expected_surrealism)
         actual_ridiculousness = parsed.get("ridiculousness", expected_ridiculousness)
         actual_insanity = parsed.get("insanity", expected_insanity)
+        sanitized_content_levels = _sanitize_content_levels(
+            parsed.get("content_levels"), expected_content_levels
+        )
         logger.info(
             "✓ Chapter %d generated with chaos parameters from OpenAI response",
             chapter_number
@@ -1186,10 +1533,15 @@ async def generate_chapter(
         "surrealism": actual_surrealism,
         "ridiculousness": actual_ridiculousness,
         "insanity": actual_insanity,
+        "content_levels": sanitized_content_levels,
     }
 
 
-async def generate_cover_image(story_title: str, story_premise: str) -> str:
+async def generate_cover_image(
+    story_title: str,
+    story_premise: str,
+    content_settings: Mapping[str, Mapping[str, float]] | None = None,
+) -> str:
     """Generate a cover image for a completed story using DALL-E.
 
     Returns the URL of the generated image, or empty string on failure.
@@ -1198,12 +1550,27 @@ async def generate_cover_image(story_title: str, story_premise: str) -> str:
     # Limit premise to avoid prompt length issues
     premise_summary = story_premise[:200] if len(story_premise) > 200 else story_premise
 
+    sanitized_content_settings: Mapping[str, Mapping[str, float]] = {}
+    if content_settings:
+        sanitized_content_settings = _sanitize_content_settings(
+            content_settings,
+            content_settings,
+        )
+    axis_summary = _describe_cover_axes(sanitized_content_settings)
+    tone_clause = ""
+    if axis_summary:
+        tone_clause = (
+            " Content tone cues (keep imagery tasteful, symbolic, and policy-compliant—no explicit depictions): "
+            f"{axis_summary}."
+        )
+
     prompt = (
         f"Book cover art for a science fiction story titled '{story_title}'. "
         f"Story premise: {premise_summary}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
         "Style: modern sci-fi book cover, professional, dramatic lighting. "
         f"Render the title text '{story_title}' clearly within the artwork, integrating it into the scene with polished typography."
+        f"{tone_clause}"
     )
 
     logger.info("Generating cover image for story: %s", story_title)
@@ -1292,6 +1659,7 @@ async def spawn_new_story(config: RuntimeConfig) -> dict[str, Any]:
         "surrealism_increment": premise_data.get("surrealism_increment", 0.05),
         "ridiculousness_increment": premise_data.get("ridiculousness_increment", 0.05),
         "insanity_increment": premise_data.get("insanity_increment", 0.05),
+        "content_settings": premise_data.get("content_settings", {}),
     }
 
 

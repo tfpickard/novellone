@@ -191,6 +191,7 @@ class BackgroundWorker:
                     "surrealism": chapter.surrealism,
                     "ridiculousness": chapter.ridiculousness,
                     "insanity": chapter.insanity,
+                    "content_levels": chapter.content_levels,
                 },
             })
         logger.info(
@@ -265,7 +266,11 @@ class BackgroundWorker:
             if not story.cover_image_url:
                 logger.info("Generating cover image for completed story: %s", story.title)
                 try:
-                    cover_url = await generate_cover_image(story.title, story.premise)
+                    cover_url = await generate_cover_image(
+                        story.title,
+                        story.premise,
+                        story.content_settings,
+                    )
                     if cover_url:
                         story.cover_image_url = cover_url
                         await session.flush()
@@ -331,6 +336,7 @@ class BackgroundWorker:
             surrealism_increment=payload.get("surrealism_increment", 0.05),
             ridiculousness_increment=payload.get("ridiculousness_increment", 0.05),
             insanity_increment=payload.get("insanity_increment", 0.05),
+            content_settings=payload.get("content_settings", {}),
         )
         session.add(story)
         await session.flush()
