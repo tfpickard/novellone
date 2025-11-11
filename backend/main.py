@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
+from collections.abc import Iterable, Mapping
 from typing import Annotated, Any, Literal
 
 from fastapi import (
@@ -24,7 +25,11 @@ from sqlalchemy.orm import selectinload
 from auth import AdminSession, require_admin, router as auth_router
 from background_worker import worker
 from config import get_settings
-from config_store import apply_config_updates, get_runtime_config
+from config_store import (
+    CONTENT_AXIS_KEYS,
+    apply_config_updates,
+    get_runtime_config,
+)
 from logging_config import configure_logging
 from database import get_session
 from models import (
@@ -81,6 +86,103 @@ async def health_check():
 
 
 SessionDep = Annotated[Any, Depends(get_db_session)]
+CONTENT_AXIS_LABELS: dict[str, str] = {
+    "sexual_content": "Sexual Content",
+    "violence": "Violence & Combat",
+    "strong_language": "Strong Language",
+    "drug_use": "Drug & Substance Use",
+    "horror_suspense": "Horror & Suspense",
+    "gore_graphic_imagery": "Gore & Graphic Imagery",
+    "romance_focus": "Romance Focus",
+    "crime_illicit_activity": "Crime & Illicit Activity",
+    "political_ideology": "Political & Ideological Themes",
+    "supernatural_occult": "Supernatural & Occult",
+}
+
+
+def _clamp_value(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_content_levels(raw: Any) -> dict[str, float]:
+    if not isinstance(raw, Mapping):
+        return {}
+    normalized: dict[str, float] = {}
+    for axis, value in raw.items():
+        numeric = _to_float(value)
+        if numeric is None:
+            continue
+        normalized[str(axis)] = _clamp_value(numeric, 0.0, 10.0)
+    return normalized
+
+
+def _normalize_content_settings(raw: Any) -> dict[str, dict[str, float]]:
+    normalized: dict[str, dict[str, float]] = {
+        axis: {
+            "average_level": 0.0,
+            "momentum": 0.0,
+            "premise_multiplier": 0.0,
+        }
+        for axis in CONTENT_AXIS_KEYS
+    }
+    if not isinstance(raw, Mapping):
+        return normalized
+    for axis, payload in raw.items():
+        if not isinstance(payload, Mapping):
+            continue
+        axis_key = str(axis)
+        average_level = _to_float(payload.get("average_level"))
+        momentum = _to_float(payload.get("momentum"))
+        premise_multiplier = _to_float(payload.get("premise_multiplier"))
+        normalized[axis_key] = {
+            "average_level": _clamp_value(average_level or 0.0, 0.0, 10.0),
+            "momentum": _clamp_value(momentum or 0.0, -1.0, 1.0),
+            "premise_multiplier": _clamp_value(
+                premise_multiplier or 0.0, 0.0, 10.0
+            ),
+        }
+    return normalized
+
+
+def _aggregate_content_levels(chapters: Iterable[Any]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for chapter in chapters:
+        content_levels = _normalize_content_levels(
+            getattr(chapter, "content_levels", None)
+        )
+        if not content_levels:
+            continue
+        for axis, value in content_levels.items():
+            totals[axis] = totals.get(axis, 0.0) + value
+            counts[axis] = counts.get(axis, 0) + 1
+    averages: dict[str, float] = {}
+    for axis in CONTENT_AXIS_KEYS:
+        if axis in totals:
+            averages[axis] = round(totals[axis] / counts[axis], 3)
+    for axis, total in totals.items():
+        if axis in averages:
+            continue
+        averages[axis] = round(total / counts[axis], 3)
+    return averages
+
+
 class ChapterRead(BaseModel):
     id: uuid.UUID
     story_id: uuid.UUID
@@ -95,6 +197,7 @@ class ChapterRead(BaseModel):
     ridiculousness: float | None = None
     insanity: float | None = None
     stats: dict[str, Any] | None = None
+    content_levels: dict[str, float] = Field(default_factory=dict)
 
     @classmethod
     def from_model(cls, chapter: Chapter, include_stats: bool = True) -> "ChapterRead":
@@ -113,6 +216,7 @@ class ChapterRead(BaseModel):
             ridiculousness=chapter.ridiculousness,
             insanity=chapter.insanity,
             stats=stats,
+            content_levels=_normalize_content_levels(chapter.content_levels),
         )
 
 
@@ -324,6 +428,8 @@ class StorySummary(BaseModel):
     insanity_increment: float = 0.05
     aggregate_stats: dict[str, Any] | None = None
     universe: StoryUniverseContext | None = None
+    content_settings: dict[str, dict[str, float]] = Field(default_factory=dict)
+    content_axis_averages: dict[str, float] = Field(default_factory=dict)
 
     @classmethod
     def from_model(
@@ -342,6 +448,9 @@ class StorySummary(BaseModel):
             total_words = aggregate_stats.get("total_words", 0)
             if total_words > 0:
                 estimated_reading_time = max(1, round(total_words / 250))
+
+        content_settings = _normalize_content_settings(story.content_settings)
+        content_axis_averages = _aggregate_content_levels(story.chapters)
 
         return cls(
             id=story.id,
@@ -369,6 +478,8 @@ class StorySummary(BaseModel):
             insanity_increment=story.insanity_increment,
             aggregate_stats=aggregate_stats,
             universe=universe,
+            content_settings=content_settings,
+            content_axis_averages=content_axis_averages,
         )
 
 
@@ -1067,10 +1178,12 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
     ).scalars().all()
     
     aggregate_text_stats = None
+    average_content_levels: dict[str, float] | None = None
     if all_chapters:
         chapters_data = [{"content": c.content} for c in all_chapters]
         aggregate_text_stats = calculate_aggregate_stats(chapters_data)
-    
+        average_content_levels = _aggregate_content_levels(all_chapters)
+
     return {
         "total_stories": total_stories,
         "total_chapters": total_chapters,
@@ -1083,6 +1196,7 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
         "average_ridiculousness": float(avg_ridiculousness),
         "average_insanity": float(avg_insanity),
         "text_statistics": aggregate_text_stats or {},
+        "average_content_levels": average_content_levels or {},
         "recent_activity": [
             ChapterRead.from_model(c, include_stats=False).model_dump() for c in recent_activity
         ],
@@ -1208,11 +1322,15 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             Chapter.ridiculousness,
             Chapter.insanity,
             Chapter.created_at,
+            Chapter.content_levels,
         )
         .order_by(Chapter.story_id, Chapter.chapter_number)
     )
 
     chaos_histories: dict[uuid.UUID, dict[str, list[float]]] = {}
+    content_axis_sums: dict[uuid.UUID, dict[str, float]] = {}
+    content_axis_counts: dict[uuid.UUID, dict[str, int]] = {}
+    content_histories: dict[uuid.UUID, dict[str, list[float]]] = {}
     chaos_history_rows = await session.execute(chaos_history_stmt)
     for row in chaos_history_rows:
         story_id = row.story_id
@@ -1238,6 +1356,26 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
                 continue
             story_histories.setdefault(metric_key, []).append(float(value))
 
+        normalized_levels = _normalize_content_levels(row.content_levels)
+        if not normalized_levels:
+            continue
+        sums = content_axis_sums.setdefault(story_id, {})
+        counts = content_axis_counts.setdefault(story_id, {})
+        axis_histories = content_histories.setdefault(story_id, {})
+        for axis, value in normalized_levels.items():
+            sums[axis] = sums.get(axis, 0.0) + value
+            counts[axis] = counts.get(axis, 0) + 1
+            axis_histories.setdefault(axis, []).append(value)
+
+    for story_id, sums in content_axis_sums.items():
+        data = aggregates.setdefault(story_id, {})
+        counts = content_axis_counts.get(story_id, {})
+        for axis, total in sums.items():
+            count = counts.get(axis, 0)
+            if not count:
+                continue
+            data[f"avg_content_{axis}"] = round(total / count, 3)
+
     for story_id, metric_history in eval_histories.items():
         for metric_key, values in metric_history.items():
             record_trend(metric_key, story_id, values)
@@ -1245,6 +1383,10 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
     for story_id, metric_history in chaos_histories.items():
         for metric_key, values in metric_history.items():
             record_trend(metric_key, story_id, values)
+
+    for story_id, axis_histories in content_histories.items():
+        for axis, values in axis_histories.items():
+            record_trend(f"avg_content_{axis}", story_id, values)
 
     metric_definitions = [
         {
@@ -1353,6 +1495,24 @@ async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
             "higher_is_better": True,
         },
     ]
+
+    content_metric_definitions: list[dict[str, Any]] = []
+    base_order = len(metric_definitions) + 1
+    for index, axis in enumerate(CONTENT_AXIS_KEYS, start=0):
+        label = CONTENT_AXIS_LABELS.get(axis, axis.replace("_", " ").title())
+        content_metric_definitions.append(
+            {
+                "key": f"avg_content_{axis}",
+                "label": f"{label} Intensity",
+                "description": f"Average {label.lower()} level reported across chapters.",
+                "group": "Content Axes",
+                "order": base_order + index,
+                "decimals": 2,
+                "higher_is_better": False,
+            }
+        )
+
+    metric_definitions.extend(content_metric_definitions)
 
     metric_results: list[MetricExtremes] = []
 
