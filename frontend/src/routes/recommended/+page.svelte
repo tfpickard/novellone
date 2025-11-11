@@ -23,6 +23,21 @@
     )
   ).sort();
 
+  const genreOccurrences = availableGenres.map((genre) => {
+    const count = allEntries.reduce((total, entry) => {
+      return total + ((entry.genre_tags ?? []).includes(genre) ? 1 : 0);
+    }, 0);
+    return { genre, count };
+  });
+
+  const maxGenreCount = genreOccurrences.reduce((max, { count }) => Math.max(max, count), 0) || 1;
+
+  const genreCloud = genreOccurrences.map(({ genre, count }) => ({
+    genre,
+    count,
+    weight: 0.75 + (count / maxGenreCount) * 0.75
+  }));
+
   let selectedStatus = 'all';
   let selectedGenre = 'all';
   let showPriorityOnly = false;
@@ -212,6 +227,10 @@
 
   const genreLabel = (value: string) => (value === 'all' ? 'All genres' : value);
 
+  const toggleGenreFilter = (genre: string) => {
+    selectedGenre = selectedGenre === genre ? 'all' : genre;
+  };
+
   $: filteredSections = groupedEntries
     .map((section) => ({
       ...section,
@@ -269,6 +288,33 @@
         <span>Show only priority metrics</span>
       </label>
     </section>
+
+    {#if genreCloud.length > 0}
+      <section class="tag-cloud" aria-label="Browse stories by tag">
+        <div class="tag-cloud-header">
+          <h2>Browse by tag</h2>
+          {#if selectedGenre !== 'all'}
+            <button type="button" class="clear-tags" on:click={() => (selectedGenre = 'all')}>
+              Clear selection
+            </button>
+          {/if}
+        </div>
+        <div class="tag-cloud-list">
+          {#each genreCloud as { genre, count, weight }}
+            <button
+              type="button"
+              class={`tag-cloud-item ${selectedGenre === genre ? 'active' : ''}`}
+              style={`--tag-weight: ${weight}`}
+              aria-pressed={selectedGenre === genre}
+              on:click={() => toggleGenreFilter(genre)}
+            >
+              <span class="tag-label">{genre}</span>
+              <span class="tag-count">{count}</span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
 
     {#if !hasFilteredMetrics}
       <section class="empty-state">
@@ -342,7 +388,15 @@
                           {#if metric.best.genre_tags?.length}
                             <div class="story-genres">
                               {#each metric.best.genre_tags as genre}
-                                <span>{genre}</span>
+                                <button
+                                  type="button"
+                                  class={`story-genre ${selectedGenre === genre ? 'active' : ''}`}
+                                  aria-pressed={selectedGenre === genre}
+                                  on:click={() => toggleGenreFilter(genre)}
+                                  title={`Show stories tagged ${genre}`}
+                                >
+                                  {genre}
+                                </button>
                               {/each}
                             </div>
                           {/if}
@@ -448,7 +502,15 @@
                           {#if metric.worst.genre_tags?.length}
                             <div class="story-genres">
                               {#each metric.worst.genre_tags as genre}
-                                <span>{genre}</span>
+                                <button
+                                  type="button"
+                                  class={`story-genre ${selectedGenre === genre ? 'active' : ''}`}
+                                  aria-pressed={selectedGenre === genre}
+                                  on:click={() => toggleGenreFilter(genre)}
+                                  title={`Show stories tagged ${genre}`}
+                                >
+                                  {genre}
+                                </button>
                               {/each}
                             </div>
                           {/if}
@@ -570,6 +632,87 @@
     border-radius: 18px;
     background: rgba(15, 23, 42, 0.6);
     border: 1px solid rgba(148, 163, 184, 0.18);
+  }
+
+  .tag-cloud {
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .tag-cloud-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .tag-cloud-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(226, 232, 240, 0.85);
+  }
+
+  .clear-tags {
+    border: none;
+    background: rgba(148, 163, 184, 0.12);
+    color: #f8fafc;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .clear-tags:hover {
+    background: rgba(59, 130, 246, 0.3);
+    color: #e0f2fe;
+  }
+
+  .tag-cloud-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .tag-cloud-item {
+    border: none;
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(59, 130, 246, 0.14);
+    color: #bfdbfe;
+    cursor: pointer;
+    font-size: calc(0.85rem * var(--tag-weight));
+    line-height: 1;
+    transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+  }
+
+  .tag-cloud-item .tag-count {
+    font-size: 0.7em;
+    opacity: 0.7;
+  }
+
+  .tag-cloud-item:hover,
+  .tag-cloud-item:focus-visible {
+    transform: translateY(-2px);
+    background: rgba(59, 130, 246, 0.28);
+    color: #e0f2fe;
+  }
+
+  .tag-cloud-item.active {
+    background: rgba(56, 189, 248, 0.4);
+    color: #f8fafc;
+    box-shadow: 0 8px 18px rgba(14, 165, 233, 0.25);
   }
 
   .control-group {
@@ -868,13 +1011,29 @@
     gap: 0.3rem;
   }
 
-  .story-genres span {
+  .story-genres .story-genre {
     padding: 0.2rem 0.5rem;
     border-radius: 999px;
     background: rgba(59, 130, 246, 0.12);
     color: #93c5fd;
     font-size: 0.75rem;
     letter-spacing: 0.05em;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  }
+
+  .story-genres .story-genre:hover,
+  .story-genres .story-genre:focus-visible {
+    background: rgba(59, 130, 246, 0.25);
+    color: #e0f2fe;
+    transform: translateY(-1px);
+  }
+
+  .story-genres .story-genre.active {
+    background: rgba(14, 165, 233, 0.35);
+    color: #f8fafc;
+    box-shadow: 0 6px 14px rgba(14, 165, 233, 0.25);
   }
 
   .story-context {
