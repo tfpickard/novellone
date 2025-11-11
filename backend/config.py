@@ -47,6 +47,17 @@ class AppSettings(BaseSettings):
     max_chapters_per_story: int = Field(..., alias="MAX_CHAPTERS_PER_STORY")
     min_chapters_before_eval: int = Field(..., alias="MIN_CHAPTERS_BEFORE_EVAL")
 
+    cover_backfill_enabled: bool = Field(True, alias="COVER_BACKFILL_ENABLED")
+    cover_backfill_interval_minutes: int = Field(
+        180, alias="COVER_BACKFILL_INTERVAL_MINUTES"
+    )
+    cover_backfill_batch_size: int = Field(3, alias="COVER_BACKFILL_BATCH_SIZE")
+    cover_backfill_pause_seconds: float = Field(
+        5.0, alias="COVER_BACKFILL_PAUSE_SECONDS"
+    )
+
+    content_axes: Annotated[str | None, Field(default=None, alias="CONTENT_AXES")]
+
     quality_score_min: float = Field(..., alias="QUALITY_SCORE_MIN")
     coherence_weight: float = Field(..., alias="COHERENCE_WEIGHT")
     novelty_weight: float = Field(..., alias="NOVELTY_WEIGHT")

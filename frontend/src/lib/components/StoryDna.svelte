@@ -1,4 +1,12 @@
 <script lang="ts">
+  import {
+    CONTENT_AXIS_KEYS,
+    CONTENT_AXIS_METADATA,
+    sanitizeContentAxisSettings,
+    sanitizeContentLevels
+  } from '$lib/contentAxes';
+  import type { ContentAxisKey, ContentAxisSettingsMap } from '$lib/contentAxes';
+
   type StorySummary = {
     id: string;
     title: string;
@@ -14,12 +22,15 @@
     insanity_increment: number;
     created_at: string;
     completed_at?: string | null;
+    content_settings?: Record<string, unknown>;
+    content_axis_averages?: Record<string, unknown>;
   };
 
   type Chapter = {
     chapter_number: number;
     created_at: string;
     generation_time_ms?: number | null;
+    content_levels?: Record<string, unknown>;
   };
 
   type Evaluation = {
@@ -36,6 +47,34 @@
   const RADAR_SIZE = 200;
   const INNER_RADIUS = 40;
   const OUTER_RADIUS = 90;
+  const axisKeys = CONTENT_AXIS_KEYS;
+
+  const CONTENT_RADAR_SIZE = 280;
+  const CONTENT_INNER_RADIUS = 36;
+  const CONTENT_OUTER_RADIUS = 108;
+
+  function computeContentAverages(
+    items: Chapter[]
+  ): Partial<Record<ContentAxisKey, number>> {
+    const totals: Partial<Record<ContentAxisKey, { total: number; count: number }>> = {};
+    for (const chapter of items ?? []) {
+      const levels = sanitizeContentLevels(chapter.content_levels);
+      for (const [axis, value] of Object.entries(levels) as Array<[ContentAxisKey, number]>) {
+        const entry = totals[axis] ?? { total: 0, count: 0 };
+        entry.total += value;
+        entry.count += 1;
+        totals[axis] = entry;
+      }
+    }
+    const averages: Partial<Record<ContentAxisKey, number>> = {};
+    for (const axis of axisKeys) {
+      const entry = totals[axis];
+      if (entry && entry.count > 0) {
+        averages[axis] = Number((entry.total / entry.count).toFixed(3));
+      }
+    }
+    return averages;
+  }
 
   function chaosProjection(initial: number, increment: number, chaptersCount: number): number {
     const growth = increment * Math.max(chaptersCount - 1, 0);
@@ -88,6 +127,75 @@
     story.insanity_initial,
     story.insanity_increment,
     story.chapter_count
+  );
+
+  $: contentAxisSettings = sanitizeContentAxisSettings(
+    story.content_settings
+  ) as ContentAxisSettingsMap;
+  $: storedContentAverages = sanitizeContentLevels(story.content_axis_averages);
+  $: derivedContentAverages = computeContentAverages(chapters);
+  $: combinedContentAverages = {
+    ...storedContentAverages,
+    ...derivedContentAverages
+  } as Partial<Record<ContentAxisKey, number>>;
+  $: contentAxisSummaries = axisKeys.map((axis) => {
+    const metadata = CONTENT_AXIS_METADATA[axis];
+    const settings = contentAxisSettings[axis];
+    const observed = combinedContentAverages[axis];
+    return {
+      key: axis,
+      label: metadata.label,
+      description: metadata.description,
+      color: metadata.color,
+      target: settings.average_level,
+      targetDisplay: settings.average_level.toFixed(2),
+      targetProgress: Math.min(Math.max(settings.average_level / 10, 0), 1),
+      momentum: settings.momentum,
+      momentumDisplay: `${settings.momentum >= 0 ? '+' : ''}${settings.momentum.toFixed(2)}/ch`,
+      multiplier: settings.premise_multiplier,
+      multiplierDisplay: `×${settings.premise_multiplier.toFixed(2)}`,
+      observed,
+      observedDisplay:
+        observed === null || observed === undefined ? '—' : Number(observed).toFixed(2),
+      observedProgress:
+        observed === null || observed === undefined
+          ? 0
+          : Math.min(Math.max(Number(observed) / 10, 0), 1)
+    };
+  });
+
+  $: contentAxisChartData = contentAxisSummaries.map((axis) => ({
+    label: axis.label,
+    color: axis.color,
+    target: axis.target,
+    observed:
+      axis.observed === null || axis.observed === undefined ? axis.target : Number(axis.observed)
+  }));
+
+  $: contentTargetPolygonPoints = contentAxisChartData
+    .map((axis, index, array) => {
+      const angle = (Math.PI * 2 * index) / array.length - Math.PI / 2;
+      const normalised = normalise(axis.target, 10);
+      const radius = CONTENT_INNER_RADIUS + normalised * (CONTENT_OUTER_RADIUS - CONTENT_INNER_RADIUS);
+      const x = CONTENT_RADAR_SIZE / 2 + radius * Math.cos(angle);
+      const y = CONTENT_RADAR_SIZE / 2 + radius * Math.sin(angle);
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  $: contentObservedPolygonPoints = contentAxisChartData
+    .map((axis, index, array) => {
+      const angle = (Math.PI * 2 * index) / array.length - Math.PI / 2;
+      const normalised = normalise(axis.observed, 10);
+      const radius = CONTENT_INNER_RADIUS + normalised * (CONTENT_OUTER_RADIUS - CONTENT_INNER_RADIUS);
+      const x = CONTENT_RADAR_SIZE / 2 + radius * Math.cos(angle);
+      const y = CONTENT_RADAR_SIZE / 2 + radius * Math.sin(angle);
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  $: hasObservedContentData = contentAxisSummaries.some(
+    (axis) => axis.observed !== null && axis.observed !== undefined
   );
 
   const elapsedHours = hoursBetween(firstChapter?.created_at, lastChapter?.created_at ?? story.completed_at ?? null);
@@ -194,12 +302,24 @@
 
   const rings = [1, 0.75, 0.5, 0.25];
 
+  const contentRings = [1, 0.66, 0.33];
+
   function ringPoints(ratio: number, total: number): string {
     const radius = INNER_RADIUS + ratio * (OUTER_RADIUS - INNER_RADIUS);
     return Array.from({ length: total }, (_, index) => {
       const angle = (Math.PI * 2 * index) / total - Math.PI / 2;
       const x = RADAR_SIZE / 2 + radius * Math.cos(angle);
       const y = RADAR_SIZE / 2 + radius * Math.sin(angle);
+      return `${x},${y}`;
+    }).join(' ');
+  }
+
+  function contentRingPoints(ratio: number, total: number): string {
+    const radius = CONTENT_INNER_RADIUS + ratio * (CONTENT_OUTER_RADIUS - CONTENT_INNER_RADIUS);
+    return Array.from({ length: total }, (_, index) => {
+      const angle = (Math.PI * 2 * index) / total - Math.PI / 2;
+      const x = CONTENT_RADAR_SIZE / 2 + radius * Math.cos(angle);
+      const y = CONTENT_RADAR_SIZE / 2 + radius * Math.sin(angle);
       return `${x},${y}`;
     }).join(' ');
   }
@@ -317,6 +437,118 @@
       </footer>
     </div>
   </div>
+
+  {#if contentAxisSummaries.length}
+    <div class="content-axes">
+      <h3>Content Axis Targets</h3>
+      <p>
+        Story directives for each content dimension compared against chapter averages so far.
+      </p>
+      <div class="content-radar">
+        <figure>
+          <svg viewBox={`0 0 ${CONTENT_RADAR_SIZE} ${CONTENT_RADAR_SIZE}`} role="presentation">
+            <defs>
+              <radialGradient id="content-dna-glow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="rgba(59, 130, 246, 0.35)" />
+                <stop offset="70%" stop-color="rgba(14, 165, 233, 0.18)" />
+                <stop offset="100%" stop-color="rgba(15, 23, 42, 0)" />
+              </radialGradient>
+            </defs>
+
+            <circle
+              cx={CONTENT_RADAR_SIZE / 2}
+              cy={CONTENT_RADAR_SIZE / 2}
+              r={CONTENT_OUTER_RADIUS + 6}
+              fill="url(#content-dna-glow)"
+              opacity="0.75"
+            />
+
+            {#each contentRings as ratio}
+              <polygon
+                points={contentRingPoints(ratio, contentAxisChartData.length)}
+                fill="none"
+                stroke="rgba(148, 163, 184, 0.16)"
+                stroke-width="1"
+              />
+            {/each}
+
+            <polygon
+              class="content-target"
+              points={contentTargetPolygonPoints}
+              fill="rgba(125, 211, 252, 0.35)"
+              stroke="rgba(125, 211, 252, 0.85)"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+
+            {#if hasObservedContentData}
+              <polygon
+                class="content-observed"
+                points={contentObservedPolygonPoints}
+                fill="rgba(167, 139, 250, 0.35)"
+                stroke="rgba(167, 139, 250, 0.85)"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+              />
+            {/if}
+
+            {#each contentAxisChartData as axis, index}
+              {@const angle = (Math.PI * 2 * index) / contentAxisChartData.length - Math.PI / 2}
+              {@const labelRadius = CONTENT_OUTER_RADIUS + 18}
+              {@const lx = CONTENT_RADAR_SIZE / 2 + labelRadius * Math.cos(angle)}
+              {@const ly = CONTENT_RADAR_SIZE / 2 + labelRadius * Math.sin(angle)}
+              <text x={lx} y={ly} text-anchor="middle" alignment-baseline="middle" class="content-label">
+                {axis.label}
+              </text>
+            {/each}
+          </svg>
+        </figure>
+        <ul class="legend">
+          <li>
+            <span class="swatch target"></span>
+            Target Intent
+          </li>
+          {#if hasObservedContentData}
+            <li>
+              <span class="swatch observed"></span>
+              Observed Average
+            </li>
+          {/if}
+        </ul>
+      </div>
+      <div class="axis-grid">
+        {#each contentAxisSummaries as axis (axis.key)}
+          <article
+            class="axis-card"
+            style={`--axis-color:${axis.color}; --axis-color-soft:${axis.color}33`}
+          >
+            <header>
+              <h4>{axis.label}</h4>
+              <p>{axis.description}</p>
+            </header>
+            <div class="bars">
+              <div class="bar">
+                <span>Target {axis.targetDisplay}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" style={`--progress:${axis.targetProgress}`}></div>
+                </div>
+              </div>
+              <div class="bar">
+                <span>Observed {axis.observedDisplay}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" style={`--progress:${axis.observedProgress}`}></div>
+                </div>
+              </div>
+            </div>
+            <footer>
+              <span>Momentum {axis.momentumDisplay}</span>
+              <span>Premise {axis.multiplierDisplay}</span>
+            </footer>
+          </article>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -441,6 +673,175 @@
     font-size: 1rem;
   }
 
+  .content-axes {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 20px;
+    padding: 1.5rem;
+  }
+
+  .content-axes h3 {
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .content-axes p {
+    margin: 0;
+    max-width: 620px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    opacity: 0.75;
+  }
+
+  .content-radar {
+    display: grid;
+    grid-template-columns: minmax(0, 320px) auto;
+    gap: 1.5rem;
+    align-items: center;
+    padding: 1.5rem 1.25rem;
+    margin: 1.5rem 0;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.5);
+  }
+
+  .content-radar figure {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  .content-radar svg {
+    width: min(320px, 100%);
+    height: auto;
+  }
+
+  .content-label {
+    font-size: 0.6rem;
+    fill: rgba(226, 232, 240, 0.75);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .content-target,
+  .content-observed {
+    filter: drop-shadow(0 6px 16px rgba(56, 189, 248, 0.35));
+  }
+
+  .content-observed {
+    filter: drop-shadow(0 6px 16px rgba(167, 139, 250, 0.3));
+  }
+
+  .content-radar .legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(226, 232, 240, 0.8);
+  }
+
+  .content-radar .legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .content-radar .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+
+  .content-radar .swatch.target {
+    background: linear-gradient(135deg, rgba(125, 211, 252, 0.8), rgba(56, 189, 248, 0.9));
+  }
+
+  .content-radar .swatch.observed {
+    background: linear-gradient(135deg, rgba(196, 181, 253, 0.85), rgba(167, 139, 250, 0.95));
+  }
+
+  .axis-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .axis-card {
+    background: rgba(2, 6, 23, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .axis-card header h4 {
+    margin: 0 0 0.2rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--axis-color);
+  }
+
+  .axis-card header p {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+
+  .axis-card .bars {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .axis-card .bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .axis-card .bar span {
+    font-size: 0.72rem;
+    opacity: 0.75;
+  }
+
+  .axis-card .bar-track {
+    background: rgba(255, 255, 255, 0.1);
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .axis-card .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: calc(var(--progress, 0) * 100%);
+    background: linear-gradient(135deg, var(--axis-color), rgba(255, 255, 255, 0.2));
+    transition: width 0.3s ease;
+  }
+
+  .axis-card footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    opacity: 0.75;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
   @media (max-width: 960px) {
     .content {
       grid-template-columns: 1fr;
@@ -448,6 +849,17 @@
 
     .readout li {
       grid-template-columns: 120px minmax(0, 1fr) auto;
+    }
+
+    .content-radar {
+      grid-template-columns: 1fr;
+      text-align: center;
+    }
+
+    .content-radar .legend {
+      flex-direction: row;
+      justify-content: center;
+      flex-wrap: wrap;
     }
   }
 
@@ -468,6 +880,10 @@
     .value {
       order: 2;
       justify-self: flex-start;
+    }
+
+    .content-radar {
+      padding: 1.25rem 1rem;
     }
   }
 </style>

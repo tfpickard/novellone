@@ -12,6 +12,15 @@
     deleteEntityOverride,
     UnauthorizedError
   } from '$lib/api';
+  import {
+    CONTENT_AXIS_KEYS,
+    CONTENT_AXIS_METADATA,
+    sanitizeContentAxisSettings,
+    sanitizeContentLevels,
+    getTopContentAxes,
+    type ContentAxisKey,
+    type ContentAxisSettingsMap
+  } from '$lib/contentAxes';
   import StoryTimeline from '$lib/components/StoryTimeline.svelte';
   import StoryDna from '$lib/components/StoryDna.svelte';
   import { renderMarkdown } from '$lib/markdown';
@@ -30,6 +39,35 @@
   let generateError: string | null = null;
   const pendingChapterIds: Set<string> = new Set();
 
+  const axisKeys = CONTENT_AXIS_KEYS;
+
+  function computeContentAverages(
+    chapters: Array<{ content_levels?: Record<string, unknown> }>
+  ): Partial<Record<ContentAxisKey, number>> {
+    const totals: Partial<Record<ContentAxisKey, { total: number; count: number }>> = {};
+    for (const chapter of chapters ?? []) {
+      const levels = sanitizeContentLevels(chapter.content_levels);
+      for (const [axis, value] of Object.entries(levels) as Array<[ContentAxisKey, number]>) {
+        const record = totals[axis] ?? { total: 0, count: 0 };
+        record.total += value;
+        record.count += 1;
+        totals[axis] = record;
+      }
+    }
+    const averages: Partial<Record<ContentAxisKey, number>> = {};
+    for (const axis of axisKeys) {
+      const entry = totals[axis];
+      if (entry && entry.count > 0) {
+        averages[axis] = Number((entry.total / entry.count).toFixed(3));
+      }
+    }
+    return averages;
+  }
+
+  function chapterTopAxes(chapter: { content_levels?: Record<string, unknown> }) {
+    return getTopContentAxes(chapter?.content_levels ?? null, 4);
+  }
+
   let theme = story.theme_json as StoryTheme;
   let universe = story.universe;
   $: theme = story.theme_json as StoryTheme;
@@ -38,6 +76,39 @@
     applyStoryTheme(theme, container);
   }
   $: premiseHtml = renderMarkdown(story.premise);
+
+  $: contentAxisSettings = sanitizeContentAxisSettings(story.content_settings) as ContentAxisSettingsMap;
+  $: storedContentAverages = sanitizeContentLevels(story.content_axis_averages);
+  $: derivedContentAverages = computeContentAverages(story.chapters ?? []);
+  $: combinedContentAverages = {
+    ...storedContentAverages,
+    ...derivedContentAverages
+  } as Partial<Record<ContentAxisKey, number>>;
+  $: contentAxisSummaries = axisKeys.map((axis) => {
+    const metadata = CONTENT_AXIS_METADATA[axis];
+    const settings = contentAxisSettings[axis];
+    const observed = combinedContentAverages[axis];
+    return {
+      key: axis,
+      label: metadata.label,
+      description: metadata.description,
+      color: metadata.color,
+      target: settings.average_level,
+      targetDisplay: settings.average_level.toFixed(2),
+      targetProgress: Math.min(Math.max(settings.average_level / 10, 0), 1),
+      momentum: settings.momentum,
+      momentumDisplay: `${settings.momentum >= 0 ? '+' : ''}${settings.momentum.toFixed(2)}/ch`,
+      multiplier: settings.premise_multiplier,
+      multiplierDisplay: `×${settings.premise_multiplier.toFixed(2)}`,
+      observed,
+      observedDisplay:
+        observed === null || observed === undefined ? '—' : Number(observed).toFixed(2),
+      observedProgress:
+        observed === null || observed === undefined
+          ? 0
+          : Math.min(Math.max(Number(observed) / 10, 0), 1)
+    };
+  });
 
   let overrides = (story.entity_overrides as any[]) ?? [];
   let overrideScope: 'story' | 'global' = 'story';
@@ -547,6 +618,40 @@
           <span class="param-value">{story.insanity_initial.toFixed(2)} +{story.insanity_increment.toFixed(2)}/ch</span>
         </div>
       </aside>
+      <aside class="content-params">
+        <h3>Content Axes</h3>
+        <div class="content-axis-grid">
+          {#each contentAxisSummaries as axis (axis.key)}
+            <div
+              class="content-axis-card"
+              style={`--axis-color:${axis.color}; --axis-color-soft:${axis.color}33`}
+            >
+              <header>
+                <h4>{axis.label}</h4>
+                <p>{axis.description}</p>
+              </header>
+              <div class="content-bars">
+                <div class="bar target">
+                  <div class="bar-track">
+                    <div class="bar-fill" style={`--progress:${axis.targetProgress}`}></div>
+                  </div>
+                  <span>Target {axis.targetDisplay}</span>
+                </div>
+                <div class="bar observed">
+                  <div class="bar-track">
+                    <div class="bar-fill" style={`--progress:${axis.observedProgress}`}></div>
+                  </div>
+                  <span>Observed {axis.observedDisplay}</span>
+                </div>
+              </div>
+              <footer>
+                <span>Momentum {axis.momentumDisplay}</span>
+                <span>Premise {axis.multiplierDisplay}</span>
+              </footer>
+            </div>
+          {/each}
+        </div>
+      </aside>
       {#if story.status === 'active' && isAuthenticated}
         <button class="generate-button" on:click={handleGenerateChapter} disabled={generating}>
           {generating ? 'Generating…' : 'Generate New Chapter'}
@@ -612,6 +717,19 @@
                   <span class="chaos-label">I</span>
                   <span class="chaos-value">{chapter.insanity?.toFixed(2) ?? 'N/A'}</span>
                 </div>
+              </div>
+            {/if}
+            {#if chapterTopAxes(chapter).length}
+              <div class="chapter-content-levels">
+                {#each chapterTopAxes(chapter) as axis (axis.key)}
+                  <span
+                    class="content-level-badge"
+                    style={`--axis-color:${CONTENT_AXIS_METADATA[axis.key].color}; --axis-color-soft:${CONTENT_AXIS_METADATA[axis.key].color}26`}
+                  >
+                    <span class="content-label">{CONTENT_AXIS_METADATA[axis.key].label}</span>
+                    <span class="content-value">{axis.value.toFixed(1)}</span>
+                  </span>
+                {/each}
               </div>
             {/if}
             {#if chapter.stats}
@@ -1291,6 +1409,125 @@
     display: block;
     font-size: 0.7rem;
     opacity: 0.6;
+  }
+
+  .content-params {
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 16px;
+    padding: 1.2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .content-params h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.8;
+  }
+
+  .content-axis-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+
+  .content-axis-card {
+    background: rgba(2, 6, 23, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .content-axis-card header h4 {
+    margin: 0 0 0.25rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--axis-color);
+  }
+
+  .content-axis-card header p {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+
+  .content-bars {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .content-bars .bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .content-bars .bar span {
+    font-size: 0.7rem;
+    opacity: 0.75;
+  }
+
+  .bar-track {
+    background: rgba(255, 255, 255, 0.08);
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: calc(var(--progress, 0) * 100%);
+    background: linear-gradient(135deg, var(--axis-color), rgba(255, 255, 255, 0.15));
+    transition: width 0.3s ease;
+  }
+
+  .content-axis-card footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    opacity: 0.75;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .chapter-content-levels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.5rem 0;
+  }
+
+  .content-level-badge {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.35rem 0.55rem;
+    border-radius: 10px;
+    border: 1px solid var(--axis-color, rgba(148, 163, 184, 0.4));
+    background: rgba(15, 23, 42, 0.6);
+    min-width: 120px;
+  }
+
+  .content-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  .content-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--axis-color, #38bdf8);
   }
 
   .chapter-body {
