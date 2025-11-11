@@ -409,6 +409,12 @@ class StoryKillRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class ContentAxisUpdate(BaseModel):
+    average_level: Annotated[float | None, Field(default=None, ge=0.0, le=10.0)] = None
+    momentum: Annotated[float | None, Field(default=None, ge=-1.0, le=1.0)] = None
+    premise_multiplier: Annotated[float | None, Field(default=None, ge=0.0, le=10.0)] = None
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     await worker.start()
@@ -442,6 +448,7 @@ class ConfigUpdate(BaseModel):
     chaos_initial_max: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
     chaos_increment_min: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
     chaos_increment_max: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
+    content_axes: dict[str, ContentAxisUpdate] | None = None
 
 
 class PromptUpdate(BaseModel):
@@ -483,6 +490,16 @@ async def update_public_config(
     _: AdminSession = Depends(require_admin),
 ) -> dict[str, Any]:
     data = payload.model_dump(exclude_none=True)
+    if "content_axes" in data:
+        content_axes_payload = {
+            axis: axis_payload
+            for axis, axis_payload in data["content_axes"].items()
+            if axis_payload
+        }
+        if content_axes_payload:
+            data["content_axes"] = content_axes_payload
+        else:
+            data.pop("content_axes")
     try:
         runtime = await apply_config_updates(session, data)
     except ValueError as exc:  # noqa: BLE001

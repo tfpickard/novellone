@@ -56,6 +56,11 @@ class Story(Base):
     ridiculousness_increment: Mapped[float] = mapped_column(Float, default=0.05)
     insanity_increment: Mapped[float] = mapped_column(Float, default=0.05)
 
+    # Content axes configuration stored per story
+    content_settings: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+
     chapters: Mapped[list["Chapter"]] = relationship(
         back_populates="story", cascade="all, delete-orphan", order_by="Chapter.chapter_number"
     )
@@ -221,6 +226,11 @@ class Chapter(Base):
     surrealism: Mapped[float | None] = mapped_column(Float, nullable=True)
     ridiculousness: Mapped[float | None] = mapped_column(Float, nullable=True)
     insanity: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Chapter-level content intensity readings per axis
+    content_levels: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
     story: Mapped[Story] = relationship(back_populates="chapters")
 

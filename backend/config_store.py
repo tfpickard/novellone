@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -8,6 +9,180 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from models import SystemConfig
+
+
+@dataclass(slots=True)
+class ContentAxisSettings:
+    average_level: float
+    momentum: float
+    premise_multiplier: float
+
+    def as_dict(self) -> dict[str, float]:
+        return {
+            "average_level": self.average_level,
+            "momentum": self.momentum,
+            "premise_multiplier": self.premise_multiplier,
+        }
+
+
+CONTENT_AXIS_KEYS: tuple[str, ...] = (
+    "sexual_content",
+    "violence",
+    "strong_language",
+    "drug_use",
+    "horror_suspense",
+    "gore_graphic_imagery",
+    "romance_focus",
+    "crime_illicit_activity",
+    "political_ideology",
+    "supernatural_occult",
+)
+
+
+_CONTENT_AXIS_KEY_SET = set(CONTENT_AXIS_KEYS)
+
+
+_DEFAULT_CONTENT_AXES: dict[str, dict[str, float]] = {
+    axis: {"average_level": 2.0, "momentum": 0.0, "premise_multiplier": 1.0}
+    for axis in CONTENT_AXIS_KEYS
+}
+
+
+def _content_axis_defaults() -> dict[str, dict[str, float]]:
+    return {axis: values.copy() for axis, values in _DEFAULT_CONTENT_AXES.items()}
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _get_numeric(value: Any, default: float, label: str) -> float:
+    if value is None:
+        return float(default)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return float(default)
+        try:
+            return float(stripped)
+        except ValueError as exc:  # noqa: B904
+            raise ValueError(f"{label} must be a number") from exc
+    raise ValueError(f"{label} must be a number")
+
+
+def _sanitize_axis_payload(axis_key: str, payload: Mapping[str, Any]) -> dict[str, float]:
+    defaults = _DEFAULT_CONTENT_AXES[axis_key]
+    average_level = _clamp(
+        _get_numeric(
+            payload.get("average_level"),
+            defaults["average_level"],
+            f"{axis_key}.average_level",
+        ),
+        0.0,
+        10.0,
+    )
+    momentum = _clamp(
+        _get_numeric(
+            payload.get("momentum"),
+            defaults["momentum"],
+            f"{axis_key}.momentum",
+        ),
+        -1.0,
+        1.0,
+    )
+    premise_multiplier = _clamp(
+        _get_numeric(
+            payload.get("premise_multiplier"),
+            defaults["premise_multiplier"],
+            f"{axis_key}.premise_multiplier",
+        ),
+        0.0,
+        10.0,
+    )
+    return {
+        "average_level": average_level,
+        "momentum": momentum,
+        "premise_multiplier": premise_multiplier,
+    }
+
+
+def _coerce_content_axes(
+    value: Any,
+    base: Mapping[str, Any] | None = None,
+) -> dict[str, dict[str, float]]:
+    if base:
+        merged_base: dict[str, dict[str, float]] = {}
+        for axis in CONTENT_AXIS_KEYS:
+            axis_base = base.get(axis) if isinstance(base, Mapping) else None
+            if isinstance(axis_base, ContentAxisSettings):
+                axis_payload: Mapping[str, Any] = axis_base.as_dict()
+            elif isinstance(axis_base, Mapping):
+                axis_payload = axis_base
+            else:
+                axis_payload = {}
+            merged_base[axis] = _sanitize_axis_payload(axis, axis_payload)
+    else:
+        merged_base = _content_axis_defaults()
+
+    if value is None:
+        return merged_base
+
+    if isinstance(value, ContentAxisSettings):
+        updates: Mapping[str, Any] = {axis: value.as_dict() for axis in CONTENT_AXIS_KEYS}
+    elif isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:  # noqa: B904
+            raise ValueError("content_axes must be valid JSON") from exc
+        if not isinstance(parsed, Mapping):
+            raise ValueError("content_axes must be a mapping")
+        updates = parsed
+    elif isinstance(value, Mapping):
+        updates = value
+    else:
+        raise ValueError("content_axes must be a mapping")
+
+    cleaned = merged_base
+    for axis_key, axis_payload in updates.items():
+        if axis_key not in _CONTENT_AXIS_KEY_SET:
+            continue
+        if isinstance(axis_payload, ContentAxisSettings):
+            axis_mapping: Mapping[str, Any] = axis_payload.as_dict()
+        elif isinstance(axis_payload, Mapping):
+            axis_mapping = axis_payload
+        else:
+            raise ValueError(
+                f"content axis '{axis_key}' must be a mapping of numeric values"
+            )
+        merged_payload = {**cleaned[axis_key], **axis_mapping}
+        cleaned[axis_key] = _sanitize_axis_payload(axis_key, merged_payload)
+
+    return cleaned
+
+
+def _build_content_axis_settings(
+    raw_axes: Mapping[str, Mapping[str, float]]
+) -> dict[str, ContentAxisSettings]:
+    settings: dict[str, ContentAxisSettings] = {}
+    for axis_key in CONTENT_AXIS_KEYS:
+        axis_values = raw_axes.get(axis_key, _DEFAULT_CONTENT_AXES[axis_key])
+        settings[axis_key] = ContentAxisSettings(
+            average_level=float(axis_values["average_level"]),
+            momentum=float(axis_values["momentum"]),
+            premise_multiplier=float(axis_values["premise_multiplier"]),
+        )
+    # Preserve any future additional axes that may be stored
+    for axis_key, axis_values in raw_axes.items():
+        if axis_key in settings:
+            continue
+        settings[axis_key] = ContentAxisSettings(
+            average_level=float(axis_values["average_level"]),
+            momentum=float(axis_values["momentum"]),
+            premise_multiplier=float(axis_values["premise_multiplier"]),
+        )
+    return settings
 
 
 @dataclass(slots=True)
@@ -32,9 +207,10 @@ class RuntimeConfig:
     chaos_initial_max: float
     chaos_increment_min: float
     chaos_increment_max: float
+    content_axes: dict[str, ContentAxisSettings]
 
-    def as_dict(self) -> dict[str, int | float | str]:
-        return {
+    def as_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
             "chapter_interval_seconds": self.chapter_interval_seconds,
             "evaluation_interval_chapters": self.evaluation_interval_chapters,
             "quality_score_min": self.quality_score_min,
@@ -56,6 +232,10 @@ class RuntimeConfig:
             "chaos_increment_min": self.chaos_increment_min,
             "chaos_increment_max": self.chaos_increment_max,
         }
+        data["content_axes"] = {
+            axis: settings.as_dict() for axis, settings in self.content_axes.items()
+        }
+        return data
 
 
 _settings = get_settings()
@@ -81,17 +261,22 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "chaos_initial_max": {"type": float, "min": 0.0, "max": 1.0},
     "chaos_increment_min": {"type": float, "min": 0.0, "max": 1.0},
     "chaos_increment_max": {"type": float, "min": 0.0, "max": 1.0},
+    "content_axes": {"type": "content_axes", "default": _content_axis_defaults()},
 }
 
-_DEFAULTS: dict[str, int | float | str] = {
-    key: getattr(_settings, key)
-    for key in _CONFIG_SCHEMA
-}
+_DEFAULTS: dict[str, Any] = {}
+for key, meta in _CONFIG_SCHEMA.items():
+    if key == "content_axes":
+        _DEFAULTS[key] = _content_axis_defaults()
+    else:
+        _DEFAULTS[key] = getattr(_settings, key)
 
 
-def _coerce_value(key: str, value: Any) -> int | float | str:
+def _coerce_value(key: str, value: Any) -> Any:
     meta = _CONFIG_SCHEMA[key]
     target = meta["type"]
+    if target == "content_axes":
+        return _coerce_content_axes(value, _content_axis_defaults())
     if value is None:
         return _DEFAULTS[key]
     if target is int:
@@ -136,13 +321,20 @@ def _coerce_value(key: str, value: Any) -> int | float | str:
 
 def _validate_updates(
     updates: Mapping[str, Any], current: RuntimeConfig
-) -> dict[str, int | float | str]:
+) -> dict[str, Any]:
     if not updates:
         return {}
-    cleaned: dict[str, int | float | str] = {}
+    cleaned: dict[str, Any] = {}
     for key, value in updates.items():
         if key not in _CONFIG_SCHEMA:
             raise ValueError(f"Unknown configuration key: {key}")
+        if key == "content_axes":
+            current_axes = {
+                axis: settings.as_dict()
+                for axis, settings in current.content_axes.items()
+            }
+            cleaned[key] = _coerce_content_axes(value, current_axes)
+            continue
         cleaned[key] = _coerce_value(key, value)
 
     min_active = cleaned.get("min_active_stories", current.min_active_stories)
@@ -168,12 +360,21 @@ async def get_runtime_config(session: AsyncSession) -> RuntimeConfig:
     records = (await session.execute(stmt)).all()
     stored: dict[str, Any] = {key: value for key, value in records}
 
-    values = {
-        key: _coerce_value(key, stored.get(key, _DEFAULTS[key]))
-        for key in _CONFIG_SCHEMA
-    }
+    scalar_values: dict[str, Any] = {}
+    for key in _CONFIG_SCHEMA:
+        if key == "content_axes":
+            continue
+        scalar_values[key] = _coerce_value(key, stored.get(key, _DEFAULTS[key]))
 
-    return RuntimeConfig(**values)
+    raw_axes = _coerce_content_axes(
+        stored.get("content_axes"),
+        _DEFAULTS["content_axes"],
+    )
+
+    return RuntimeConfig(
+        **scalar_values,
+        content_axes=_build_content_axis_settings(raw_axes),
+    )
 
 
 async def apply_config_updates(
@@ -196,4 +397,10 @@ async def apply_config_updates(
     return await get_runtime_config(session)
 
 
-__all__ = ["RuntimeConfig", "get_runtime_config", "apply_config_updates"]
+__all__ = [
+    "RuntimeConfig",
+    "ContentAxisSettings",
+    "CONTENT_AXIS_KEYS",
+    "get_runtime_config",
+    "apply_config_updates",
+]
