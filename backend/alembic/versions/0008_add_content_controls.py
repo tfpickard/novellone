@@ -1,7 +1,7 @@
-"""add content controls columns
+"""Add content controls columns
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0008_add_content_controls
+Revises: 0007_meta_analysis_operations
 Create Date: 2025-01-01
 
 """
@@ -11,8 +11,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 
 # revision identifiers, used by Alembic.
-revision = "0008"
-down_revision = "0007"
+revision = "0008_add_content_controls"
+down_revision = "0007_meta_analysis_operations"
 branch_labels = None
 depends_on = None
 
