@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -135,12 +136,17 @@ def _coerce_content_axes(
         if not value.strip():
             updates = {}
         else:
+            parse_error: Exception | None = None
             try:
                 parsed = json.loads(value)
-            except json.JSONDecodeError as exc:  # noqa: B904
-                raise ValueError("content_axes must be valid JSON") from exc
+            except json.JSONDecodeError as json_error:  # noqa: B904
+                parse_error = json_error
+                try:
+                    parsed = ast.literal_eval(value)
+                except (ValueError, SyntaxError) as exc:  # noqa: B904
+                    raise ValueError("content_axes must be valid JSON") from exc
             if not isinstance(parsed, Mapping):
-                raise ValueError("content_axes must be a mapping")
+                raise ValueError("content_axes must be a mapping") from parse_error
             updates = parsed
     elif isinstance(value, Mapping):
         updates = value
