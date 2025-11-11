@@ -643,6 +643,18 @@
     return result;
   }
 
+  type AxisDirtyState = Record<ContentAxisKey, boolean>;
+
+  function computeAxisDirtyState(
+    flags: Record<ContentAxisKey, Record<AxisField, boolean>>
+  ): AxisDirtyState {
+    const result = {} as AxisDirtyState;
+    for (const axis of axisKeys) {
+      result[axis] = axisFields.some((field) => Boolean(flags[axis][field]));
+    }
+    return result;
+  }
+
   function createAxisErrorEntry(): Record<AxisField, string | null> {
     return axisFields.reduce(
       (acc, field) => ({ ...acc, [field]: null }),
@@ -665,6 +677,7 @@
   let axisInputs = createAxisInputMap(contentAxes);
   let axisDirtyFlags = createAxisDirtyMap(false);
   let axisErrors = createAxisErrorMap();
+  let axisDirtyState: AxisDirtyState = computeAxisDirtyState(axisDirtyFlags);
   let axisSaving: ContentAxisKey | null = null;
   let savingKey: ConfigKey | null = null;
   let successMessage: string | null = null;
@@ -800,19 +813,10 @@
   }
 
   function axisIsDirty(axis: ContentAxisKey): boolean {
-    const baseline = createAxisInputEntry(contentAxes[axis]);
-    return axisFields.some((field) => {
-      const raw = axisInputs[axis][field];
-      if (axisErrors[axis][field]) {
-        return raw.trim() !== baseline[field];
-      }
-      if (!raw.trim()) {
-        return false;
-      }
-      const parsed = parseAxisValue(field, raw);
-      return !axisValueEquals(contentAxes[axis][field], parsed, field);
-    });
+    return axisDirtyState[axis] ?? false;
   }
+
+  $: axisDirtyState = computeAxisDirtyState(axisDirtyFlags);
 
   function handleAxisInput(axis: ContentAxisKey, field: AxisField, raw: string) {
     resetBanners();
