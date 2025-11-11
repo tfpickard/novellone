@@ -49,6 +49,27 @@
   let overrideError: string | null = null;
   const removingOverrides: Record<string, boolean> = {};
 
+  let coverModalOpen = false;
+
+  const openCoverModal = () => {
+    if (!story.cover_image_url) return;
+    coverModalOpen = true;
+  };
+
+  const closeCoverModal = () => {
+    coverModalOpen = false;
+  };
+
+  const handleCoverKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      closeCoverModal();
+    }
+  };
+
+  $: if (typeof document !== 'undefined') {
+    document.body.classList.toggle('cover-modal-open', coverModalOpen);
+  }
+
   const hasUniverseContext = (context: any) => {
     if (!context) return false;
     const relatedCount = context.related_stories?.length ?? 0;
@@ -213,6 +234,9 @@
 
   onMount(() => {
     socket = createStorySocket(handleSocket);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', handleCoverKeydown);
+    }
   });
   async function handleGenerateChapter() {
     if (!isAuthenticated || generating || story.status !== 'active') return;
@@ -241,6 +265,12 @@
 
   onDestroy(() => {
     socket?.close();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('keydown', handleCoverKeydown);
+    }
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('cover-modal-open');
+    }
   });
 </script>
 
@@ -248,9 +278,15 @@
   <header class="story-header">
     <div class="header-content">
       {#if story.cover_image_url && story.status === 'completed'}
-        <div class="cover-image-wrapper">
+        <button
+          type="button"
+          class="cover-image-wrapper"
+          on:click={openCoverModal}
+          aria-haspopup="dialog"
+          aria-label={`View full-size cover art for ${story.title}`}
+        >
           <img src={story.cover_image_url} alt="{story.title} cover" class="cover-image" />
-        </div>
+        </button>
       {/if}
       <div class="header-text">
         <span class="status" data-live={story.status === 'active'}>{story.status}</span>
@@ -608,6 +644,18 @@
   </section>
 </div>
 
+{#if coverModalOpen && story.cover_image_url}
+  <div class="cover-modal" role="dialog" aria-modal="true" aria-label={`Full-size cover art for ${story.title}`}>
+    <button class="cover-modal-backdrop" type="button" on:click={closeCoverModal} aria-label="Close cover preview"></button>
+    <div class="cover-modal-content">
+      <button class="cover-modal-close" type="button" on:click={closeCoverModal} aria-label="Close cover preview">
+        ×
+      </button>
+      <img src={story.cover_image_url} alt="{story.title} full cover art" loading="lazy" />
+    </div>
+  </div>
+{/if}
+
 <style>
   .story-detail {
     background: var(--background-color, rgba(2, 6, 23, 0.8));
@@ -638,6 +686,16 @@
 
   .cover-image-wrapper {
     flex-shrink: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: zoom-in;
+    border-radius: 18px;
+  }
+
+  .cover-image-wrapper:focus-visible {
+    outline: 3px solid var(--accent-color, rgba(56, 189, 248, 0.85));
+    outline-offset: 4px;
   }
 
   .cover-image {
@@ -647,6 +705,74 @@
     border-radius: 16px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
     border: 2px solid var(--accent-color, rgba(125, 211, 252, 0.5));
+  }
+
+  .cover-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(1.5rem, 4vw, 3rem);
+  }
+
+  .cover-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(7, 11, 20, 0.82);
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .cover-modal-content {
+    position: relative;
+    z-index: 1;
+    max-width: min(85vw, 720px);
+    max-height: min(90vh, 960px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cover-modal-content img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 20px;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.75);
+    border: 2px solid rgba(56, 189, 248, 0.4);
+  }
+
+  .cover-modal-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    border: none;
+    background: rgba(15, 23, 42, 0.85);
+    color: #e2e8f0;
+    font-size: 1.5rem;
+    line-height: 1;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+
+  .cover-modal-close:hover,
+  .cover-modal-close:focus-visible {
+    background: rgba(30, 64, 175, 0.85);
+    color: #f8fafc;
+  }
+
+  :global(body.cover-modal-open) {
+    overflow: hidden;
   }
 
   .side-panel {
