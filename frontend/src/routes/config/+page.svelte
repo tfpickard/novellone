@@ -809,7 +809,9 @@
     const validation = validateAxisValue(field, raw);
     axisErrors = { ...axisErrors, [axis]: { ...axisErrors[axis], [field]: validation } };
     if (validation) {
-      axisDirtyFlags = { ...axisDirtyFlags, [axis]: { ...axisDirtyFlags[axis], [field]: false } };
+      const baseline = createAxisInputEntry(contentAxes[axis])[field];
+      const dirty = raw.trim() !== baseline;
+      axisDirtyFlags = { ...axisDirtyFlags, [axis]: { ...axisDirtyFlags[axis], [field]: dirty } };
       return;
     }
     const parsed = parseAxisValue(field, raw);
