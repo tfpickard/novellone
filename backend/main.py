@@ -160,6 +160,12 @@ def _normalize_content_settings(raw: Any) -> dict[str, dict[str, float]]:
     return normalized
 
 
+def _format_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.replace(microsecond=0).isoformat() + "Z"
+
+
 def _aggregate_content_levels(chapters: Iterable[Any]) -> dict[str, float]:
     totals: dict[str, float] = {}
     counts: dict[str, int] = {}
@@ -559,6 +565,14 @@ class ConfigUpdate(BaseModel):
     chaos_initial_max: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
     chaos_increment_min: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
     chaos_increment_max: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)] = None
+    cover_backfill_enabled: bool | None = None
+    cover_backfill_interval_minutes: Annotated[
+        int | None, Field(default=None, ge=5, le=1440)
+    ] = None
+    cover_backfill_batch_size: Annotated[int | None, Field(default=None, ge=1, le=25)] = None
+    cover_backfill_pause_seconds: Annotated[
+        float | None, Field(default=None, ge=0.0, le=120.0)
+    ] = None
     content_axes: dict[str, ContentAxisUpdate] | None = None
 
 
@@ -591,7 +605,9 @@ async def get_public_config(
     _: AdminSession = Depends(require_admin),
 ) -> dict[str, Any]:
     runtime = await get_runtime_config(session)
-    return runtime.as_dict()
+    data = runtime.as_dict()
+    data["cover_backfill_status"] = worker.get_cover_backfill_status(runtime)
+    return data
 
 
 @app.patch("/api/config")
@@ -616,7 +632,9 @@ async def update_public_config(
     except ValueError as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await session.commit()
-    return runtime.as_dict()
+    result = runtime.as_dict()
+    result["cover_backfill_status"] = worker.get_cover_backfill_status(runtime)
+    return result
 
 
 @app.get("/api/prompts")
@@ -1703,54 +1721,34 @@ async def admin_backfill_cover_images(
     session: SessionDep,
     _: AdminSession = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Generate cover images for all completed stories without one."""
-    stmt = select(Story).where(
-        Story.status == "completed",
-        Story.cover_image_url.is_(None)
-    )
-    
-    stories = (await session.execute(stmt)).scalars().all()
-    
-    if not stories:
-        return {
-            "message": "No stories need cover images",
-            "processed": 0,
-            "success": 0,
-            "failed": 0
-        }
-    
-    logger.info("Found %d completed stories without cover images", len(stories))
-    
-    success_count = 0
-    failed_count = 0
-    
-    for story in stories:
-        logger.info("Generating cover image for story: %s", story.title)
-        try:
-            cover_url = await generate_cover_image(
-                story.title,
-                story.premise,
-                story.content_settings,
-            )
-            if cover_url:
-                story.cover_image_url = cover_url
-                await session.flush()
-                success_count += 1
-                logger.info("✓ Cover image generated for: %s", story.title)
-            else:
-                failed_count += 1
-                logger.warning("✗ No URL returned for: %s", story.title)
-        except Exception as exc:
-            failed_count += 1
-            logger.exception("Failed to generate cover for %s: %s", story.title, exc)
-    
+    """Trigger the automated cover art backfill job immediately."""
+    runtime_config = await get_runtime_config(session)
+    summary = await worker.run_cover_backfill(session, runtime_config, force=True)
     await session.commit()
-    
+
+    serialized_summary = summary.copy()
+    ran_at = serialized_summary.get("ran_at")
+    if isinstance(ran_at, datetime):
+        serialized_summary["ran_at"] = _format_iso(ran_at)
+
+    if serialized_summary.get("skipped"):
+        reason = serialized_summary.get("reason") or "skipped"
+        message = f"Backfill skipped ({reason})"
+    elif serialized_summary.get("processed", 0) == 0:
+        message = "No stories need cover images"
+    else:
+        message = (
+            "Backfill complete: processed {processed} stories, generated {generated} covers"
+        ).format(
+            processed=serialized_summary.get("processed", 0),
+            generated=serialized_summary.get("generated", 0),
+        )
+
+    status = worker.get_cover_backfill_status(runtime_config)
     return {
-        "message": "Backfill complete",
-        "processed": len(stories),
-        "success": success_count,
-        "failed": failed_count
+        "message": message,
+        "summary": serialized_summary,
+        "status": status,
     }
 
 

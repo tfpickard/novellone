@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select
@@ -26,6 +27,13 @@ from websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
+
+def _format_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.replace(microsecond=0).isoformat() + "Z"
+
+
 settings = get_settings()
 
 
@@ -41,6 +49,9 @@ class BackgroundWorker:
         self._last_full_refresh: datetime | None = None
         self._force_full_refresh: bool = False
         self._full_refresh_interval = timedelta(hours=24)
+        self._cover_backfill_lock = asyncio.Lock()
+        self._last_cover_backfill: datetime | None = None
+        self._last_cover_backfill_summary: dict[str, Any] | None = None
 
     async def start(self) -> None:
         if not self.scheduler.running:
@@ -95,6 +106,12 @@ class BackgroundWorker:
 
             await self._maintain_story_count(session, runtime_config)
             await session.commit()
+
+            backfill_summary = await self._run_cover_backfill_if_due(
+                session, runtime_config
+            )
+            if backfill_summary is not None:
+                await session.commit()
 
             await self._run_meta_analysis(session, active_stories)
             await session.commit()
@@ -292,6 +309,208 @@ class BackgroundWorker:
                     }
                 )
             logger.info("Story %s completed: %s", story.title, reason)
+
+    async def _run_cover_backfill_if_due(
+        self, session, config: RuntimeConfig
+    ) -> dict[str, Any] | None:
+        if not config.cover_backfill_enabled:
+            logger.debug("Cover backfill disabled; skipping")
+            return None
+        if self._cover_backfill_lock.locked():
+            logger.debug("Cover backfill already running; skipping new request")
+            return None
+        now = datetime.utcnow()
+        interval = timedelta(minutes=config.cover_backfill_interval_minutes)
+        if self._last_cover_backfill and (now - self._last_cover_backfill) < interval:
+            logger.debug(
+                "Cover backfill not due yet (next run at %s)",
+                (self._last_cover_backfill + interval).isoformat(),
+            )
+            return None
+        summary = await self.run_cover_backfill(session, config)
+        return summary
+
+    async def run_cover_backfill(
+        self,
+        session,
+        config: RuntimeConfig,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        if self._cover_backfill_lock.locked():
+            logger.debug("Cover backfill already in progress; returning last summary")
+            summary = self._last_cover_backfill_summary or {
+                "processed": 0,
+                "generated": 0,
+                "failed": 0,
+                "remaining": None,
+                "duration_ms": 0.0,
+                "ran_at": self._last_cover_backfill,
+                "requested": None,
+                "skipped": False,
+            }
+            return {
+                "skipped": True,
+                "reason": "in_progress",
+                **({k: v for k, v in summary.items() if k not in {"skipped", "reason"}}),
+            }
+        if not config.cover_backfill_enabled and not force:
+            logger.info("Cover backfill requested but disabled in runtime config")
+            summary = self._last_cover_backfill_summary or {
+                "processed": 0,
+                "generated": 0,
+                "failed": 0,
+                "remaining": None,
+                "duration_ms": 0.0,
+                "ran_at": self._last_cover_backfill,
+                "requested": None,
+                "skipped": False,
+            }
+            return {
+                "skipped": True,
+                "reason": "disabled",
+                **({k: v for k, v in summary.items() if k not in {"skipped", "reason"}}),
+            }
+        async with self._cover_backfill_lock:
+            summary = await self._execute_cover_backfill(session, config, limit)
+        return summary
+
+    async def _execute_cover_backfill(
+        self, session, config: RuntimeConfig, limit: int | None
+    ) -> dict[str, Any]:
+        requested = limit or config.cover_backfill_batch_size
+        stmt = (
+            select(Story)
+            .where(
+                Story.status == "completed",
+                Story.cover_image_url.is_(None),
+            )
+            .order_by(Story.completed_at.asc(), Story.created_at.asc())
+            .limit(requested)
+        )
+        stories = list((await session.execute(stmt)).scalars())
+        start = time.perf_counter()
+        summary: dict[str, Any] = {
+            "requested": requested,
+            "processed": len(stories),
+            "generated": 0,
+            "failed": 0,
+            "remaining": None,
+            "duration_ms": 0.0,
+            "ran_at": None,
+            "reason": "executed",
+            "skipped": False,
+        }
+        if not stories:
+            logger.debug("No completed stories require cover art backfill")
+            summary["reason"] = "no_stories"
+            summary["ran_at"] = datetime.utcnow()
+            self._last_cover_backfill = summary["ran_at"]
+            self._last_cover_backfill_summary = summary.copy()
+            return summary
+
+        pause = max(float(config.cover_backfill_pause_seconds), 0.0)
+        max_attempts = 3
+        for index, story in enumerate(stories, start=1):
+            attempts = 0
+            while attempts < max_attempts:
+                attempts += 1
+                try:
+                    cover_url = await generate_cover_image(
+                        story.title,
+                        story.premise,
+                        story.content_settings,
+                    )
+                except asyncio.CancelledError:  # pragma: no cover - propagate cancellation
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "Cover backfill failed for %s (attempt %d/%d): %s",
+                        story.title,
+                        attempts,
+                        max_attempts,
+                        exc,
+                    )
+                    if attempts < max_attempts:
+                        backoff = pause * (2 ** (attempts - 1))
+                        if backoff:
+                            await asyncio.sleep(backoff)
+                        continue
+                    summary["failed"] += 1
+                    break
+                else:
+                    if cover_url:
+                        story.cover_image_url = cover_url
+                        await session.flush()
+                        summary["generated"] += 1
+                        logger.info(
+                            "✓ Backfill cover generated for story %s", story.title
+                        )
+                    else:
+                        summary["failed"] += 1
+                        logger.warning(
+                            "✗ Cover generation returned no URL for story %s", story.title
+                        )
+                    break
+            if pause and index < len(stories):
+                await asyncio.sleep(pause)
+
+        summary["duration_ms"] = (time.perf_counter() - start) * 1000
+        summary["ran_at"] = datetime.utcnow()
+        remaining_stmt = (
+            select(func.count())
+            .select_from(Story)
+            .where(
+                Story.status == "completed",
+                Story.cover_image_url.is_(None),
+            )
+        )
+        summary["remaining"] = (await session.execute(remaining_stmt)).scalar_one()
+        self._last_cover_backfill = summary["ran_at"]
+        self._last_cover_backfill_summary = summary.copy()
+        logger.info(
+            "Cover backfill processed %d stories (generated=%d failed=%d, remaining=%d)",
+            summary["processed"],
+            summary["generated"],
+            summary["failed"],
+            summary["remaining"],
+        )
+        return summary
+
+    def get_cover_backfill_status(
+        self, config: RuntimeConfig | None = None
+    ) -> dict[str, Any]:
+        summary = self._last_cover_backfill_summary or {
+            "processed": 0,
+            "generated": 0,
+            "failed": 0,
+            "remaining": None,
+            "duration_ms": 0.0,
+            "ran_at": self._last_cover_backfill,
+            "reason": "never_run",
+            "requested": None,
+            "skipped": False,
+        }
+        ran_at = summary.get("ran_at", self._last_cover_backfill)
+        next_due: datetime | None = None
+        if config and ran_at and config.cover_backfill_enabled:
+            next_due = ran_at + timedelta(minutes=config.cover_backfill_interval_minutes)
+
+        return {
+            "enabled": config.cover_backfill_enabled if config else None,
+            "in_progress": self._cover_backfill_lock.locked(),
+            "last_run_at": _format_timestamp(ran_at),
+            "next_run_due_at": _format_timestamp(next_due),
+            "processed": summary.get("processed", 0),
+            "generated": summary.get("generated", 0),
+            "failed": summary.get("failed", 0),
+            "remaining": summary.get("remaining"),
+            "duration_ms": summary.get("duration_ms"),
+            "requested": summary.get("requested"),
+            "reason": summary.get("reason"),
+            "skipped": summary.get("skipped", False),
+        }
 
     async def _maintain_story_count(self, session, config: RuntimeConfig) -> None:
         count_stmt = select(func.count()).select_from(Story).where(Story.status == "active")

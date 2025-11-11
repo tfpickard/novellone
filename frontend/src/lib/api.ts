@@ -71,6 +71,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
+export type CoverBackfillStatus = {
+  enabled: boolean | null;
+  in_progress: boolean;
+  last_run_at: string | null;
+  next_run_due_at: string | null;
+  processed: number;
+  generated: number;
+  failed: number;
+  remaining: number | null;
+  duration_ms: number | null;
+  requested: number | null;
+  reason: string | null;
+  skipped: boolean;
+};
+
 export type RuntimeConfig = {
   chapter_interval_seconds: number;
   evaluation_interval_chapters: number;
@@ -92,7 +107,12 @@ export type RuntimeConfig = {
   chaos_initial_max: number;
   chaos_increment_min: number;
   chaos_increment_max: number;
+  cover_backfill_enabled: boolean;
+  cover_backfill_interval_minutes: number;
+  cover_backfill_batch_size: number;
+  cover_backfill_pause_seconds: number;
   content_axes: ContentAxisSettingsMap;
+  cover_backfill_status?: CoverBackfillStatus;
 };
 
 export type PremisePromptState = {
@@ -152,6 +172,12 @@ export function spawnStory(): Promise<any> {
 
 export function resetSystem(): Promise<any> {
   return request('/api/admin/reset', {
+    method: 'POST'
+  });
+}
+
+export function runCoverBackfill(): Promise<any> {
+  return request('/api/admin/backfill-cover-images', {
     method: 'POST'
   });
 }

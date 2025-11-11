@@ -207,6 +207,10 @@ class RuntimeConfig:
     chaos_initial_max: float
     chaos_increment_min: float
     chaos_increment_max: float
+    cover_backfill_enabled: bool
+    cover_backfill_interval_minutes: int
+    cover_backfill_batch_size: int
+    cover_backfill_pause_seconds: float
     content_axes: dict[str, ContentAxisSettings]
 
     def as_dict(self) -> dict[str, Any]:
@@ -231,6 +235,10 @@ class RuntimeConfig:
             "chaos_initial_max": self.chaos_initial_max,
             "chaos_increment_min": self.chaos_increment_min,
             "chaos_increment_max": self.chaos_increment_max,
+            "cover_backfill_enabled": self.cover_backfill_enabled,
+            "cover_backfill_interval_minutes": self.cover_backfill_interval_minutes,
+            "cover_backfill_batch_size": self.cover_backfill_batch_size,
+            "cover_backfill_pause_seconds": self.cover_backfill_pause_seconds,
         }
         data["content_axes"] = {
             axis: settings.as_dict() for axis, settings in self.content_axes.items()
@@ -261,6 +269,10 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "chaos_initial_max": {"type": float, "min": 0.0, "max": 1.0},
     "chaos_increment_min": {"type": float, "min": 0.0, "max": 1.0},
     "chaos_increment_max": {"type": float, "min": 0.0, "max": 1.0},
+    "cover_backfill_enabled": {"type": bool},
+    "cover_backfill_interval_minutes": {"type": int, "min": 5, "max": 1440},
+    "cover_backfill_batch_size": {"type": int, "min": 1, "max": 25},
+    "cover_backfill_pause_seconds": {"type": float, "min": 0.0, "max": 120.0},
     "content_axes": {"type": "content_axes", "default": _content_axis_defaults()},
 }
 
@@ -293,6 +305,20 @@ def _coerce_value(key: str, value: Any) -> Any:
             coerced = float(value)
         else:
             raise ValueError(f"Invalid value for {key}")
+    elif target is bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if not lowered:
+                return bool(_DEFAULTS[key])
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+        raise ValueError(f"Invalid value for {key}")
     elif target is str:
         if isinstance(value, str):
             coerced = value.strip()
