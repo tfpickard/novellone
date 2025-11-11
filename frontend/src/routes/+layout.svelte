@@ -94,10 +94,12 @@
   };
 
   onMount(() => {
+    if (typeof window === 'undefined') return;
     window.addEventListener('keydown', handleKeydown);
   });
 
   onDestroy(() => {
+    if (typeof window === 'undefined') return;
     window.removeEventListener('keydown', handleKeydown);
     if (searchTimeout) {
       clearTimeout(searchTimeout);
