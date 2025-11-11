@@ -56,6 +56,8 @@ class AppSettings(BaseSettings):
         5.0, alias="COVER_BACKFILL_PAUSE_SECONDS"
     )
 
+    content_axes: Annotated[str | None, Field(default=None, alias="CONTENT_AXES")]
+
     quality_score_min: float = Field(..., alias="QUALITY_SCORE_MIN")
     coherence_weight: float = Field(..., alias="COHERENCE_WEIGHT")
     novelty_weight: float = Field(..., alias="NOVELTY_WEIGHT")

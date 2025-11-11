@@ -279,7 +279,9 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
 _DEFAULTS: dict[str, Any] = {}
 for key, meta in _CONFIG_SCHEMA.items():
     if key == "content_axes":
-        _DEFAULTS[key] = _content_axis_defaults()
+        _DEFAULTS[key] = _coerce_content_axes(
+            getattr(_settings, "content_axes", None), _content_axis_defaults()
+        )
     else:
         _DEFAULTS[key] = getattr(_settings, key)
 
