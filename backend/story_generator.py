@@ -44,6 +44,19 @@ _CONTENT_AXIS_LABELS: dict[str, str] = {
     "supernatural_occult": "Supernatural or occult elements",
 }
 
+_COVER_AXIS_MOODS: dict[str, str] = {
+    "sexual_content": "romantic tension",
+    "violence": "dynamic action energy",
+    "strong_language": "gritty attitude",
+    "drug_use": "underground nightlife vibes",
+    "horror_suspense": "eerie suspense",
+    "gore_graphic_imagery": "shadowy intensity (no gore shown)",
+    "romance_focus": "heartfelt relationships",
+    "crime_illicit_activity": "noir intrigue",
+    "political_ideology": "ideological debate",
+    "supernatural_occult": "mystical wonder",
+}
+
 
 def _ordered_content_axes(extra_keys: Sequence[str] | None = None) -> list[str]:
     ordered = list(CONTENT_AXIS_KEYS)
@@ -233,14 +246,16 @@ def _describe_cover_axes(
         return ""
     descriptions: list[str] = []
     for axis, average in top_axes:
-        label = _CONTENT_AXIS_LABELS.get(axis, axis.replace("_", " ").title())
+        mood = _COVER_AXIS_MOODS.get(axis)
+        if not mood:
+            mood = axis.replace("_", " ").title()
         intensity = _intensity_descriptor(average)
         momentum = float(
             content_settings.get(axis, {}).get("momentum", 0.0)
         )
         trend = _momentum_short(momentum)
         descriptions.append(
-            f"{label}: {intensity} presence, {trend} across chapters"
+            f"{intensity.title()} {mood}, {trend} across chapters"
         )
     return "; ".join(descriptions)
 
