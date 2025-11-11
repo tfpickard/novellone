@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getTopContentAxes, CONTENT_AXIS_METADATA } from '$lib/contentAxes';
+
   type TimelineChapter = {
     id: string;
     chapter_number: number;
@@ -9,6 +11,7 @@
     surrealism?: number | null;
     ridiculousness?: number | null;
     insanity?: number | null;
+    content_levels?: Record<string, unknown>;
   };
 
   type TimelineEvaluation = {
@@ -33,7 +36,8 @@
   );
   $: events = sortedChapters.map((chapter) => ({
     chapter,
-    evaluation: evaluationByChapter.get(chapter.chapter_number)
+    evaluation: evaluationByChapter.get(chapter.chapter_number),
+    topAxes: getTopContentAxes(chapter.content_levels ?? null, 3)
   }));
 
   $: firstTimestamp = sortedChapters[0]?.created_at ?? null;
@@ -117,20 +121,37 @@
                 <strong>{event.chapter.tokens_used ?? '—'}</strong>
               </div>
 
-              <div class="metric chaos">
-                <span>Chaos</span>
-                <div class="chaos-bars">
-                  <div class="bar absurdity" title="Absurdity" style={`--value:${normalizedChaos(event.chapter.absurdity)}`}></div>
-                  <div class="bar surrealism" title="Surrealism" style={`--value:${normalizedChaos(event.chapter.surrealism)}`}></div>
-                  <div class="bar ridiculousness" title="Ridiculousness" style={`--value:${normalizedChaos(event.chapter.ridiculousness)}`}></div>
-                  <div class="bar insanity" title="Insanity" style={`--value:${normalizedChaos(event.chapter.insanity)}`}></div>
+            <div class="metric chaos">
+              <span>Chaos</span>
+              <div class="chaos-bars">
+                <div class="bar absurdity" title="Absurdity" style={`--value:${normalizedChaos(event.chapter.absurdity)}`}></div>
+                <div class="bar surrealism" title="Surrealism" style={`--value:${normalizedChaos(event.chapter.surrealism)}`}></div>
+                <div class="bar ridiculousness" title="Ridiculousness" style={`--value:${normalizedChaos(event.chapter.ridiculousness)}`}></div>
+                <div class="bar insanity" title="Insanity" style={`--value:${normalizedChaos(event.chapter.insanity)}`}></div>
+              </div>
+            </div>
+
+            {#if event.topAxes.length}
+              <div class="metric content">
+                <span>Content</span>
+                <div class="content-pills">
+                  {#each event.topAxes as axis (axis.key)}
+                    <span
+                      class="content-pill"
+                      style={`--axis-color:${CONTENT_AXIS_METADATA[axis.key].color}; --axis-color-soft:${CONTENT_AXIS_METADATA[axis.key].color}26`}
+                    >
+                      <span class="label">{CONTENT_AXIS_METADATA[axis.key].label}</span>
+                      <span class="value">{axis.value.toFixed(1)}</span>
+                    </span>
+                  {/each}
                 </div>
               </div>
+            {/if}
 
-              {#if event.evaluation}
-                <div class="evaluation">
-                  <span>Quality</span>
-                  <strong style={`color:${scoreColor(event.evaluation.overall_score)}`}>
+            {#if event.evaluation}
+              <div class="evaluation">
+                <span>Quality</span>
+                <strong style={`color:${scoreColor(event.evaluation.overall_score)}`}>
                     {event.evaluation.overall_score.toFixed(2)}
                   </strong>
                   <ul>
@@ -290,7 +311,7 @@
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
-  .metric {
+  .metric { 
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
@@ -309,6 +330,39 @@
 
   .metric strong {
     font-size: 1.1rem;
+  }
+
+  .metric.content {
+    gap: 0.6rem;
+  }
+
+  .content-pills {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .content-pill {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    border-radius: 10px;
+    border: 1px solid var(--axis-color, rgba(148, 163, 184, 0.35));
+    background: rgba(15, 23, 42, 0.55);
+    font-size: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .content-pill .label {
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .content-pill .value {
+    font-weight: 600;
+    color: var(--axis-color, #38bdf8);
   }
 
   .metric.tokens {

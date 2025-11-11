@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import { queueMetaRefresh, UnauthorizedError } from '$lib/api';
+  import { CONTENT_AXIS_KEYS, CONTENT_AXIS_METADATA } from '$lib/contentAxes';
 
   export let data: PageData;
   $: isAuthenticated = Boolean(data.config);
@@ -24,6 +25,19 @@
   const metaSummary = data.meta?.summary ?? {};
   const metaRuntime = data.meta?.runtime ?? {};
   const summaryEntries = Object.entries(metaSummary);
+
+  const contentAxisSummaries = CONTENT_AXIS_KEYS.map((axis) => {
+    const metadata = CONTENT_AXIS_METADATA[axis];
+    const value = data.stats.average_content_levels?.[axis] ?? 0;
+    return {
+      key: axis,
+      label: metadata.label,
+      description: metadata.description,
+      color: metadata.color,
+      value,
+      progress: Math.min(Math.max(value / 10, 0), 1)
+    };
+  });
 
   const formatDuration = (value: number | null | undefined) =>
     typeof value === 'number' ? `${value.toFixed(1)} ms` : '—';
@@ -159,6 +173,33 @@
           <div class="chaos-bar-fill" style="width: {((data.stats.average_insanity ?? 0) * 100).toFixed(0)}%; background: #ef4444;"></div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section class="content-axis-summary">
+    <h2>Content Intensity Averages</h2>
+    <p class="content-axis-description">
+      Long-term averages across all chapters give a quick sense of how strongly each thematic axis is
+      appearing in the current catalogue.
+    </p>
+    <div class="content-axis-grid">
+      {#each contentAxisSummaries as axis}
+        <article
+          class="content-axis-card"
+          style={`--axis-color:${axis.color}; --axis-color-soft:${axis.color}33`}
+        >
+          <header>
+            <h3>{axis.label}</h3>
+            <p>{axis.description}</p>
+          </header>
+          <div class="content-axis-bar">
+            <div class="bar-track">
+              <div class="bar-fill" style={`--progress:${axis.progress}`}></div>
+            </div>
+            <span>{axis.value.toFixed(2)} / 10</span>
+          </div>
+        </article>
+      {/each}
     </div>
   </section>
 
@@ -503,6 +544,91 @@
     height: 100%;
     border-radius: 999px;
     transition: width 0.3s ease;
+  }
+
+  .content-axis-summary {
+    margin-bottom: 3rem;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 24px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .content-axis-summary h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.5rem;
+    margin: 0;
+    color: #38bdf8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .content-axis-description {
+    margin: 0;
+    max-width: 720px;
+    line-height: 1.6;
+    opacity: 0.75;
+  }
+
+  .content-axis-grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .content-axis-card {
+    background: rgba(2, 6, 23, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 18px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .content-axis-card header h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--axis-color);
+  }
+
+  .content-axis-card header p {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+
+  .content-axis-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .content-axis-bar .bar-track {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+  }
+
+  .content-axis-bar .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: calc(var(--progress, 0) * 100%);
+    background: linear-gradient(135deg, var(--axis-color), rgba(255, 255, 255, 0.2));
+    transition: width 0.3s ease;
+  }
+
+  .content-axis-bar span {
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0.85;
   }
 
   .text-stats-summary {

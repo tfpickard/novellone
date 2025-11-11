@@ -1,4 +1,12 @@
 <script lang="ts">
+  import {
+    CONTENT_AXIS_KEYS,
+    CONTENT_AXIS_METADATA,
+    sanitizeContentAxisSettings,
+    sanitizeContentLevels
+  } from '$lib/contentAxes';
+  import type { ContentAxisKey, ContentAxisSettingsMap } from '$lib/contentAxes';
+
   type StorySummary = {
     id: string;
     title: string;
@@ -14,12 +22,15 @@
     insanity_increment: number;
     created_at: string;
     completed_at?: string | null;
+    content_settings?: Record<string, unknown>;
+    content_axis_averages?: Record<string, unknown>;
   };
 
   type Chapter = {
     chapter_number: number;
     created_at: string;
     generation_time_ms?: number | null;
+    content_levels?: Record<string, unknown>;
   };
 
   type Evaluation = {
@@ -36,6 +47,30 @@
   const RADAR_SIZE = 200;
   const INNER_RADIUS = 40;
   const OUTER_RADIUS = 90;
+  const axisKeys = CONTENT_AXIS_KEYS;
+
+  function computeContentAverages(
+    items: Chapter[]
+  ): Partial<Record<ContentAxisKey, number>> {
+    const totals: Partial<Record<ContentAxisKey, { total: number; count: number }>> = {};
+    for (const chapter of items ?? []) {
+      const levels = sanitizeContentLevels(chapter.content_levels);
+      for (const [axis, value] of Object.entries(levels) as Array<[ContentAxisKey, number]>) {
+        const entry = totals[axis] ?? { total: 0, count: 0 };
+        entry.total += value;
+        entry.count += 1;
+        totals[axis] = entry;
+      }
+    }
+    const averages: Partial<Record<ContentAxisKey, number>> = {};
+    for (const axis of axisKeys) {
+      const entry = totals[axis];
+      if (entry && entry.count > 0) {
+        averages[axis] = Number((entry.total / entry.count).toFixed(3));
+      }
+    }
+    return averages;
+  }
 
   function chaosProjection(initial: number, increment: number, chaptersCount: number): number {
     const growth = increment * Math.max(chaptersCount - 1, 0);
@@ -89,6 +124,41 @@
     story.insanity_increment,
     story.chapter_count
   );
+
+  $: contentAxisSettings = sanitizeContentAxisSettings(
+    story.content_settings
+  ) as ContentAxisSettingsMap;
+  $: storedContentAverages = sanitizeContentLevels(story.content_axis_averages);
+  $: derivedContentAverages = computeContentAverages(chapters);
+  $: combinedContentAverages = {
+    ...storedContentAverages,
+    ...derivedContentAverages
+  } as Partial<Record<ContentAxisKey, number>>;
+  $: contentAxisSummaries = axisKeys.map((axis) => {
+    const metadata = CONTENT_AXIS_METADATA[axis];
+    const settings = contentAxisSettings[axis];
+    const observed = combinedContentAverages[axis];
+    return {
+      key: axis,
+      label: metadata.label,
+      description: metadata.description,
+      color: metadata.color,
+      target: settings.average_level,
+      targetDisplay: settings.average_level.toFixed(2),
+      targetProgress: Math.min(Math.max(settings.average_level / 10, 0), 1),
+      momentum: settings.momentum,
+      momentumDisplay: `${settings.momentum >= 0 ? '+' : ''}${settings.momentum.toFixed(2)}/ch`,
+      multiplier: settings.premise_multiplier,
+      multiplierDisplay: `×${settings.premise_multiplier.toFixed(2)}`,
+      observed,
+      observedDisplay:
+        observed === null || observed === undefined ? '—' : Number(observed).toFixed(2),
+      observedProgress:
+        observed === null || observed === undefined
+          ? 0
+          : Math.min(Math.max(Number(observed) / 10, 0), 1)
+    };
+  });
 
   const elapsedHours = hoursBetween(firstChapter?.created_at, lastChapter?.created_at ?? story.completed_at ?? null);
   const chaptersPerHour = elapsedHours > 0 ? story.chapter_count / elapsedHours : story.chapter_count;
@@ -317,6 +387,46 @@
       </footer>
     </div>
   </div>
+
+  {#if contentAxisSummaries.length}
+    <div class="content-axes">
+      <h3>Content Axis Targets</h3>
+      <p>
+        Story directives for each content dimension compared against chapter averages so far.
+      </p>
+      <div class="axis-grid">
+        {#each contentAxisSummaries as axis (axis.key)}
+          <article
+            class="axis-card"
+            style={`--axis-color:${axis.color}; --axis-color-soft:${axis.color}33`}
+          >
+            <header>
+              <h4>{axis.label}</h4>
+              <p>{axis.description}</p>
+            </header>
+            <div class="bars">
+              <div class="bar">
+                <span>Target {axis.targetDisplay}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" style={`--progress:${axis.targetProgress}`}></div>
+                </div>
+              </div>
+              <div class="bar">
+                <span>Observed {axis.observedDisplay}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" style={`--progress:${axis.observedProgress}`}></div>
+                </div>
+              </div>
+            </div>
+            <footer>
+              <span>Momentum {axis.momentumDisplay}</span>
+              <span>Premise {axis.multiplierDisplay}</span>
+            </footer>
+          </article>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -439,6 +549,102 @@
 
   footer strong {
     font-size: 1rem;
+  }
+
+  .content-axes {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 20px;
+    padding: 1.5rem;
+  }
+
+  .content-axes h3 {
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .content-axes p {
+    margin: 0;
+    max-width: 620px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    opacity: 0.75;
+  }
+
+  .axis-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .axis-card {
+    background: rgba(2, 6, 23, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .axis-card header h4 {
+    margin: 0 0 0.2rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--axis-color);
+  }
+
+  .axis-card header p {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+
+  .axis-card .bars {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .axis-card .bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .axis-card .bar span {
+    font-size: 0.72rem;
+    opacity: 0.75;
+  }
+
+  .axis-card .bar-track {
+    background: rgba(255, 255, 255, 0.1);
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .axis-card .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: calc(var(--progress, 0) * 100%);
+    background: linear-gradient(135deg, var(--axis-color), rgba(255, 255, 255, 0.2));
+    transition: width 0.3s ease;
+  }
+
+  .axis-card footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    opacity: 0.75;
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
 
   @media (max-width: 960px) {

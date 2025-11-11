@@ -2,6 +2,15 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { updateConfig, spawnStory, resetSystem, updatePromptState } from '$lib/api';
   import type { PremisePromptState, RuntimeConfig } from '$lib/api';
+  import {
+    CONTENT_AXIS_KEYS,
+    CONTENT_AXIS_METADATA,
+    CONTENT_AXIS_DEFAULTS,
+    sanitizeContentAxisSettings,
+    type ContentAxisKey,
+    type ContentAxisSettings,
+    type ContentAxisSettingsMap
+  } from '$lib/contentAxes';
   import type { PageData } from './$types';
 
   export let data: PageData;
@@ -59,7 +68,9 @@
 
   type ConfigItem = NumericConfigItem | TextConfigItem;
 
-  const initialConfig = (data.config as RuntimeConfig | undefined) ?? {
+  const runtimeConfig = data.config as RuntimeConfig | undefined;
+
+  const baseConfig: ConfigValues = {
     chapter_interval_seconds: 60,
     evaluation_interval_chapters: 2,
     quality_score_min: 0.65,
@@ -82,7 +93,20 @@
     chaos_increment_max: 0.15
   };
 
-  let config: ConfigValues = { ...initialConfig };
+  if (runtimeConfig) {
+    for (const key of Object.keys(baseConfig) as ConfigKey[]) {
+      const value = runtimeConfig[key];
+      if (value !== undefined && value !== null) {
+        baseConfig[key] = value as (typeof baseConfig)[typeof key];
+      }
+    }
+  }
+
+  let config: ConfigValues = { ...baseConfig };
+
+  const initialContentAxes: ContentAxisSettingsMap = sanitizeContentAxisSettings(
+    runtimeConfig?.content_axes ?? CONTENT_AXIS_DEFAULTS
+  );
 
   const fallbackPromptState: PremisePromptState = {
     directives: [],
@@ -354,9 +378,90 @@
     return result;
   }
 
+  const axisKeys = CONTENT_AXIS_KEYS;
+  type AxisField = keyof ContentAxisSettings;
+  const axisFields: AxisField[] = ['average_level', 'momentum', 'premise_multiplier'];
+
+  const axisFieldMeta: Record<AxisField, { label: string; hint: string; min: number; max: number; step: number }> = {
+    average_level: {
+      label: 'Average Level',
+      hint: 'Target mean intensity across the story (0–10).',
+      min: 0,
+      max: 10,
+      step: 0.1
+    },
+    momentum: {
+      label: 'Chapter Momentum',
+      hint: 'Expected change per chapter (-1 to 1).',
+      min: -1,
+      max: 1,
+      step: 0.05
+    },
+    premise_multiplier: {
+      label: 'Premise Remix Multiplier',
+      hint: 'Influences how strongly the premise leans into this axis (0–10).',
+      min: 0,
+      max: 10,
+      step: 0.1
+    }
+  };
+
+  function createAxisInputEntry(settings: ContentAxisSettings): Record<AxisField, string> {
+    return {
+      average_level: settings.average_level.toString(),
+      momentum: settings.momentum.toString(),
+      premise_multiplier: settings.premise_multiplier.toString()
+    };
+  }
+
+  function createAxisInputMap(
+    values: ContentAxisSettingsMap
+  ): Record<ContentAxisKey, Record<AxisField, string>> {
+    const result = {} as Record<ContentAxisKey, Record<AxisField, string>>;
+    for (const axis of axisKeys) {
+      result[axis] = createAxisInputEntry(values[axis]);
+    }
+    return result;
+  }
+
+  function createAxisDirtyEntry(initial: boolean): Record<AxisField, boolean> {
+    return axisFields.reduce(
+      (acc, field) => ({ ...acc, [field]: initial }),
+      {} as Record<AxisField, boolean>
+    );
+  }
+
+  function createAxisDirtyMap(initial: boolean): Record<ContentAxisKey, Record<AxisField, boolean>> {
+    const result = {} as Record<ContentAxisKey, Record<AxisField, boolean>>;
+    for (const axis of axisKeys) {
+      result[axis] = createAxisDirtyEntry(initial);
+    }
+    return result;
+  }
+
+  function createAxisErrorEntry(): Record<AxisField, string | null> {
+    return axisFields.reduce(
+      (acc, field) => ({ ...acc, [field]: null }),
+      {} as Record<AxisField, string | null>
+    );
+  }
+
+  function createAxisErrorMap(): Record<ContentAxisKey, Record<AxisField, string | null>> {
+    const result = {} as Record<ContentAxisKey, Record<AxisField, string | null>>;
+    for (const axis of axisKeys) {
+      result[axis] = createAxisErrorEntry();
+    }
+    return result;
+  }
+
   let inputs = createStringMap(config);
   let dirtyFlags = createBooleanMap(false);
   let errors = createErrorMap();
+  let contentAxes: ContentAxisSettingsMap = { ...initialContentAxes };
+  let axisInputs = createAxisInputMap(contentAxes);
+  let axisDirtyFlags = createAxisDirtyMap(false);
+  let axisErrors = createAxisErrorMap();
+  let axisSaving: ContentAxisKey | null = null;
   let savingKey: ConfigKey | null = null;
   let successMessage: string | null = null;
   let errorMessage: string | null = null;
@@ -458,6 +563,106 @@
     return null;
   }
 
+  function validateAxisValue(field: AxisField, raw: string): string | null {
+    if (!raw.trim()) {
+      return 'Provide a value.';
+    }
+    const numeric = Number(raw);
+    if (Number.isNaN(numeric)) {
+      return 'Enter a numeric value.';
+    }
+    const { min, max } = axisFieldMeta[field];
+    if (numeric < min || numeric > max) {
+      return `Value must be between ${min} and ${max}.`;
+    }
+    return null;
+  }
+
+  function parseAxisValue(field: AxisField, raw: string): number {
+    const numeric = Number(raw);
+    const { min, max } = axisFieldMeta[field];
+    const clamped = Math.max(min, Math.min(max, numeric));
+    const precision = field === 'momentum' ? 3 : 2;
+    return Number(clamped.toFixed(precision));
+  }
+
+  function axisValueEquals(current: number, next: number, field: AxisField): boolean {
+    const tolerance = field === 'momentum' ? 1e-3 : 1e-2;
+    return Math.abs(current - next) < tolerance;
+  }
+
+  function axisHasErrors(axis: ContentAxisKey): boolean {
+    return axisFields.some((field) => Boolean(axisErrors[axis][field]));
+  }
+
+  function axisIsDirty(axis: ContentAxisKey): boolean {
+    return axisFields.some((field) => axisDirtyFlags[axis][field]);
+  }
+
+  function handleAxisInput(axis: ContentAxisKey, field: AxisField, raw: string) {
+    resetBanners();
+    axisInputs = { ...axisInputs, [axis]: { ...axisInputs[axis], [field]: raw } };
+    const validation = validateAxisValue(field, raw);
+    axisErrors = { ...axisErrors, [axis]: { ...axisErrors[axis], [field]: validation } };
+    if (validation) {
+      axisDirtyFlags = { ...axisDirtyFlags, [axis]: { ...axisDirtyFlags[axis], [field]: false } };
+      return;
+    }
+    const parsed = parseAxisValue(field, raw);
+    const dirty = !axisValueEquals(contentAxes[axis][field], parsed, field);
+    axisDirtyFlags = { ...axisDirtyFlags, [axis]: { ...axisDirtyFlags[axis], [field]: dirty } };
+  }
+
+  function resetAxis(axis: ContentAxisKey) {
+    resetBanners();
+    const settings = contentAxes[axis];
+    axisInputs = { ...axisInputs, [axis]: createAxisInputEntry(settings) };
+    axisErrors = { ...axisErrors, [axis]: createAxisErrorEntry() };
+    axisDirtyFlags = { ...axisDirtyFlags, [axis]: createAxisDirtyEntry(false) };
+  }
+
+  async function saveAxis(axis: ContentAxisKey) {
+    if (axisSaving) return;
+
+    const metadata = CONTENT_AXIS_METADATA[axis];
+    const nextSettings: ContentAxisSettings = { ...contentAxes[axis] };
+
+    for (const field of axisFields) {
+      const raw = axisInputs[axis][field];
+      const validation = validateAxisValue(field, raw);
+      axisErrors = { ...axisErrors, [axis]: { ...axisErrors[axis], [field]: validation } };
+      if (validation) {
+        errorMessage = validation;
+        return;
+      }
+      nextSettings[field] = parseAxisValue(field, raw);
+    }
+
+    if (axisFields.every((field) => axisValueEquals(contentAxes[axis][field], nextSettings[field], field))) {
+      successMessage = `${metadata.label} already up to date.`;
+      axisDirtyFlags = { ...axisDirtyFlags, [axis]: createAxisDirtyEntry(false) };
+      return;
+    }
+
+    const payload = {
+      content_axes: {
+        [axis]: nextSettings
+      }
+    } as Partial<RuntimeConfig>;
+
+    try {
+      axisSaving = axis;
+      const runtime = await updateConfig(payload);
+      applyRuntimeConfig(runtime);
+      successMessage = `${metadata.label} settings saved.`;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update content axis.';
+      errorMessage = message;
+    } finally {
+      axisSaving = null;
+    }
+  }
+
   function resetBanners() {
     successMessage = null;
     errorMessage = null;
@@ -478,10 +683,18 @@
   }
 
   function applyRuntimeConfig(runtime: RuntimeConfig) {
-    config = { ...runtime };
+    const nextConfig = { ...config } as ConfigValues;
+    for (const key of configKeys) {
+      nextConfig[key] = runtime[key] as (typeof nextConfig)[typeof key];
+    }
+    config = nextConfig;
+    contentAxes = sanitizeContentAxisSettings(runtime.content_axes ?? CONTENT_AXIS_DEFAULTS);
     inputs = createStringMap(config);
     dirtyFlags = createBooleanMap(false);
     errors = createErrorMap();
+    axisInputs = createAxisInputMap(contentAxes);
+    axisDirtyFlags = createAxisDirtyMap(false);
+    axisErrors = createAxisErrorMap();
   }
 
   const hurllolFallback = 'Hurl Unmasks Recursive Literature Leaking Out Love';
@@ -751,6 +964,74 @@
     {/each}
   </section>
 
+  <section class="content-axis-config">
+    <header>
+      <h2>Content Intensity Controls</h2>
+      <p>
+        Tune how boldly each thematic axis should manifest. Average level guides overall tone,
+        momentum nudges per-chapter swings, and the remix multiplier influences premise remixes.
+      </p>
+    </header>
+
+    <div class="axis-grid">
+      {#each axisKeys as axis}
+        {@const metadata = CONTENT_AXIS_METADATA[axis]}
+        <article
+          class="axis-card"
+          style={`--axis-color:${metadata.color}; --axis-color-soft:${metadata.color}33`}
+        >
+          <header>
+            <h3>{metadata.label}</h3>
+            <p>{metadata.description}</p>
+          </header>
+
+          <form class="axis-form" on:submit|preventDefault={() => saveAxis(axis)}>
+            {#each axisFields as field}
+              {@const fieldMeta = axisFieldMeta[field]}
+              <div class="axis-field">
+                <label for={`axis-${axis}-${field}`}>{fieldMeta.label}</label>
+                <div class="axis-input-row">
+                  <input
+                    id={`axis-${axis}-${field}`}
+                    type="number"
+                    step={fieldMeta.step}
+                    min={fieldMeta.min}
+                    max={fieldMeta.max}
+                    value={axisInputs[axis][field]}
+                    class:invalid={Boolean(axisErrors[axis][field])}
+                    class:dirty={axisDirtyFlags[axis][field]}
+                    inputmode="decimal"
+                    on:input={(event) => handleAxisInput(axis, field, event.currentTarget.value)}
+                  />
+                  <span class="axis-hint">{fieldMeta.hint}</span>
+                </div>
+                {#if axisErrors[axis][field]}
+                  <p class="error-message">{axisErrors[axis][field]}</p>
+                {/if}
+              </div>
+            {/each}
+
+            <div class="axis-actions">
+              <button
+                type="submit"
+                disabled={!axisIsDirty(axis) || axisHasErrors(axis) || axisSaving === axis}
+              >
+                {axisSaving === axis ? 'Saving…' : axisIsDirty(axis) ? 'Save axis' : 'Saved'}
+              </button>
+              <button
+                type="button"
+                on:click={() => resetAxis(axis)}
+                disabled={axisSaving === axis || !axisIsDirty(axis)}
+              >
+                Reset
+              </button>
+            </div>
+          </form>
+        </article>
+      {/each}
+    </div>
+  </section>
+
   <section class="prompt-section">
     <header>
       <div>
@@ -967,6 +1248,151 @@
     display: grid;
     gap: 1.5rem;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .content-axis-config {
+    margin-top: 2.5rem;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 24px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    box-shadow: 0 18px 48px rgba(8, 13, 32, 0.35);
+  }
+
+  .content-axis-config header h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.35rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .content-axis-config header p {
+    margin: 0;
+    max-width: 720px;
+    line-height: 1.6;
+    opacity: 0.85;
+  }
+
+  .content-axis-config .axis-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .content-axis-config .axis-card {
+    background: rgba(2, 6, 23, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 20px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    box-shadow: 0 16px 40px rgba(2, 6, 23, 0.4);
+  }
+
+  .axis-card header h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.1rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .axis-card header p {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    opacity: 0.8;
+  }
+
+  .axis-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .axis-field label {
+    display: block;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.35rem;
+    color: rgba(226, 232, 240, 0.85);
+  }
+
+  .axis-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .axis-input-row input {
+    width: 120px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.65);
+    color: #e2e8f0;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.95rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .axis-input-row input:focus {
+    outline: none;
+    border-color: var(--axis-color);
+    box-shadow: 0 0 0 3px var(--axis-color-soft);
+  }
+
+  .axis-input-row input.invalid {
+    border-color: rgba(248, 113, 113, 0.75);
+  }
+
+  .axis-input-row input.dirty:not(.invalid) {
+    border-color: var(--axis-color);
+  }
+
+  .axis-hint {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .axis-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
+  .axis-actions button {
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.75);
+    color: #e2e8f0;
+    padding: 0.45rem 1.2rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+
+  .axis-actions button:first-child {
+    background: linear-gradient(135deg, var(--axis-color), rgba(2, 6, 23, 0.9));
+    border-color: var(--axis-color);
+    color: #0f172a;
+  }
+
+  .axis-actions button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .axis-actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .prompt-section {

@@ -1,3 +1,5 @@
+import type { ContentAxisSettingsMap } from './contentAxes';
+
 const publicApiUrl = import.meta.env.VITE_PUBLIC_API_URL as string | undefined;
 let base = publicApiUrl;
 
@@ -90,6 +92,7 @@ export type RuntimeConfig = {
   chaos_initial_max: number;
   chaos_increment_min: number;
   chaos_increment_max: number;
+  content_axes: ContentAxisSettingsMap;
 };
 
 export type PremisePromptState = {
