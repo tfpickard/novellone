@@ -263,6 +263,41 @@ class MetaRefreshRequest(BaseModel):
     full_rebuild: bool = False
 
 
+class MetricStoryResult(BaseModel):
+    story_id: uuid.UUID
+    title: str
+    status: str
+    cover_image_url: str | None
+    chapter_count: int
+    completed_at: datetime | None
+    last_activity_at: datetime | None = None
+    total_tokens: int | None = None
+    latest_chapter_number: int | None = None
+    premise: str | None = None
+    genre_tags: list[str] | None = None
+    style_authors: list[str] | None = None
+    narrative_perspective: str | None = None
+    tone: str | None = None
+    estimated_reading_time_minutes: int | None = None
+    value: float
+    trend_change: float | None = None
+    trend_samples: list[float] | None = None
+
+
+class MetricExtremes(BaseModel):
+    key: str
+    label: str
+    description: str | None = None
+    group: str
+    order: int
+    unit: str | None = None
+    decimals: int = 2
+    higher_is_better: bool = True
+    priority: bool = False
+    best: MetricStoryResult | None = None
+    worst: MetricStoryResult | None = None
+
+
 class StorySummary(BaseModel):
     id: uuid.UUID
     title: str
@@ -1031,6 +1066,338 @@ async def get_stats(session: SessionDep) -> dict[str, Any]:
             ChapterRead.from_model(c, include_stats=False).model_dump() for c in recent_activity
         ],
     }
+
+
+@app.get("/api/recommendations")
+async def get_story_recommendations(session: SessionDep) -> dict[str, Any]:
+    story_rows = (await session.execute(select(Story))).scalars().all()
+    if not story_rows:
+        return {"metrics": []}
+
+    stories: dict[uuid.UUID, Story] = {story.id: story for story in story_rows}
+    last_activity_by_story: dict[uuid.UUID, datetime | None] = {
+        story_id: story.last_chapter_at for story_id, story in stories.items()
+    }
+    latest_chapter_numbers: dict[uuid.UUID, int] = {}
+    aggregates: dict[uuid.UUID, dict[str, float]] = {
+        story_id: {
+            "chapter_count": float(story.chapter_count),
+            "total_tokens": float(story.total_tokens or 0),
+        }
+        for story_id, story in stories.items()
+    }
+
+    metric_trends: dict[str, dict[uuid.UUID, dict[str, Any]]] = {}
+
+    def record_trend(metric_key: str, story_id: uuid.UUID, points: list[float]) -> None:
+        if not points:
+            return
+        samples = points[-12:]
+        change = points[-1] - points[0] if len(points) > 1 else 0.0
+        metric_data = metric_trends.setdefault(metric_key, {})
+        metric_data[story_id] = {"change": change, "samples": samples}
+
+    eval_stmt = (
+        select(
+            StoryEvaluation.story_id,
+            func.avg(StoryEvaluation.overall_score).label("avg_overall_score"),
+            func.avg(StoryEvaluation.coherence_score).label("avg_coherence_score"),
+            func.avg(StoryEvaluation.novelty_score).label("avg_novelty_score"),
+            func.avg(StoryEvaluation.engagement_score).label("avg_engagement_score"),
+            func.avg(StoryEvaluation.pacing_score).label("avg_pacing_score"),
+        )
+        .group_by(StoryEvaluation.story_id)
+    )
+
+    eval_rows = await session.execute(eval_stmt)
+    for row in eval_rows:
+        data = aggregates.setdefault(row.story_id, {})
+        if row.avg_overall_score is not None:
+            data["avg_overall_score"] = float(row.avg_overall_score)
+        if row.avg_coherence_score is not None:
+            data["avg_coherence_score"] = float(row.avg_coherence_score)
+        if row.avg_novelty_score is not None:
+            data["avg_novelty_score"] = float(row.avg_novelty_score)
+        if row.avg_engagement_score is not None:
+            data["avg_engagement_score"] = float(row.avg_engagement_score)
+        if row.avg_pacing_score is not None:
+            data["avg_pacing_score"] = float(row.avg_pacing_score)
+
+    eval_history_stmt = (
+        select(
+            StoryEvaluation.story_id,
+            StoryEvaluation.chapter_number,
+            StoryEvaluation.overall_score,
+            StoryEvaluation.coherence_score,
+            StoryEvaluation.novelty_score,
+            StoryEvaluation.engagement_score,
+            StoryEvaluation.pacing_score,
+        )
+        .order_by(StoryEvaluation.story_id, StoryEvaluation.chapter_number)
+    )
+
+    eval_histories: dict[uuid.UUID, dict[str, list[float]]] = {}
+    eval_history_rows = await session.execute(eval_history_stmt)
+    for row in eval_history_rows:
+        story_id = row.story_id
+        story_histories = eval_histories.setdefault(story_id, {})
+        for metric_key, attr in (
+            (
+                ("avg_overall_score", "overall_score"),
+                ("avg_coherence_score", "coherence_score"),
+                ("avg_novelty_score", "novelty_score"),
+                ("avg_engagement_score", "engagement_score"),
+                ("avg_pacing_score", "pacing_score"),
+            )
+        ):
+            value = getattr(row, attr, None)
+            if value is None:
+                continue
+            story_histories.setdefault(metric_key, []).append(float(value))
+
+    chaos_stmt = (
+        select(
+            Chapter.story_id,
+            func.avg(Chapter.absurdity).label("avg_absurdity"),
+            func.avg(Chapter.surrealism).label("avg_surrealism"),
+            func.avg(Chapter.ridiculousness).label("avg_ridiculousness"),
+            func.avg(Chapter.insanity).label("avg_insanity"),
+        )
+        .group_by(Chapter.story_id)
+    )
+
+    chaos_rows = await session.execute(chaos_stmt)
+    for row in chaos_rows:
+        data = aggregates.setdefault(row.story_id, {})
+        if row.avg_absurdity is not None:
+            data["avg_absurdity"] = float(row.avg_absurdity)
+        if row.avg_surrealism is not None:
+            data["avg_surrealism"] = float(row.avg_surrealism)
+        if row.avg_ridiculousness is not None:
+            data["avg_ridiculousness"] = float(row.avg_ridiculousness)
+        if row.avg_insanity is not None:
+            data["avg_insanity"] = float(row.avg_insanity)
+
+    chaos_history_stmt = (
+        select(
+            Chapter.story_id,
+            Chapter.chapter_number,
+            Chapter.absurdity,
+            Chapter.surrealism,
+            Chapter.ridiculousness,
+            Chapter.insanity,
+            Chapter.created_at,
+        )
+        .order_by(Chapter.story_id, Chapter.chapter_number)
+    )
+
+    chaos_histories: dict[uuid.UUID, dict[str, list[float]]] = {}
+    chaos_history_rows = await session.execute(chaos_history_stmt)
+    for row in chaos_history_rows:
+        story_id = row.story_id
+        if row.chapter_number is not None:
+            current_latest = latest_chapter_numbers.get(story_id, 0)
+            if row.chapter_number > current_latest:
+                latest_chapter_numbers[story_id] = row.chapter_number
+        if row.created_at is not None:
+            existing = last_activity_by_story.get(story_id)
+            if existing is None or row.created_at > existing:
+                last_activity_by_story[story_id] = row.created_at
+        story_histories = chaos_histories.setdefault(story_id, {})
+        for metric_key, attr in (
+            (
+                ("avg_absurdity", "absurdity"),
+                ("avg_surrealism", "surrealism"),
+                ("avg_ridiculousness", "ridiculousness"),
+                ("avg_insanity", "insanity"),
+            )
+        ):
+            value = getattr(row, attr, None)
+            if value is None:
+                continue
+            story_histories.setdefault(metric_key, []).append(float(value))
+
+    for story_id, metric_history in eval_histories.items():
+        for metric_key, values in metric_history.items():
+            record_trend(metric_key, story_id, values)
+
+    for story_id, metric_history in chaos_histories.items():
+        for metric_key, values in metric_history.items():
+            record_trend(metric_key, story_id, values)
+
+    metric_definitions = [
+        {
+            "key": "avg_overall_score",
+            "label": "Average Evaluation Score",
+            "description": "Mean overall evaluation across all chapters.",
+            "group": "Evaluation Scores",
+            "order": 1,
+            "decimals": 2,
+            "higher_is_better": True,
+            "priority": True,
+        },
+        {
+            "key": "avg_coherence_score",
+            "label": "Average Coherence",
+            "description": "How consistently the narrative holds together chapter to chapter.",
+            "group": "Evaluation Scores",
+            "order": 2,
+            "decimals": 2,
+            "higher_is_better": True,
+            "priority": True,
+        },
+        {
+            "key": "avg_novelty_score",
+            "label": "Average Novelty",
+            "description": "Inventiveness and originality rated by the evaluator.",
+            "group": "Evaluation Scores",
+            "order": 3,
+            "decimals": 2,
+            "higher_is_better": True,
+            "priority": True,
+        },
+        {
+            "key": "avg_engagement_score",
+            "label": "Average Engagement",
+            "description": "Reader engagement rating averaged across evaluations.",
+            "group": "Evaluation Scores",
+            "order": 4,
+            "decimals": 2,
+            "higher_is_better": True,
+            "priority": True,
+        },
+        {
+            "key": "avg_pacing_score",
+            "label": "Average Pacing",
+            "description": "Smoothness of pacing across the story arc.",
+            "group": "Evaluation Scores",
+            "order": 5,
+            "decimals": 2,
+            "higher_is_better": True,
+            "priority": True,
+        },
+        {
+            "key": "avg_absurdity",
+            "label": "Absurdity",
+            "description": "Average absurdity rating for generated chapters.",
+            "group": "Chaos Parameters",
+            "order": 6,
+            "decimals": 3,
+            "higher_is_better": True,
+        },
+        {
+            "key": "avg_surrealism",
+            "label": "Surrealism",
+            "description": "Average surrealism level across chapters.",
+            "group": "Chaos Parameters",
+            "order": 7,
+            "decimals": 3,
+            "higher_is_better": True,
+        },
+        {
+            "key": "avg_ridiculousness",
+            "label": "Ridiculousness",
+            "description": "Average ridiculousness injection per chapter.",
+            "group": "Chaos Parameters",
+            "order": 8,
+            "decimals": 3,
+            "higher_is_better": True,
+        },
+        {
+            "key": "avg_insanity",
+            "label": "Insanity",
+            "description": "Average insanity score keeping the chaos dial pegged.",
+            "group": "Chaos Parameters",
+            "order": 9,
+            "decimals": 3,
+            "higher_is_better": True,
+        },
+        {
+            "key": "chapter_count",
+            "label": "Chapters Published",
+            "description": "Total number of chapters released for the story.",
+            "group": "Story Progress",
+            "order": 10,
+            "decimals": 0,
+            "higher_is_better": True,
+            "priority": True,
+        },
+        {
+            "key": "total_tokens",
+            "label": "Tokens Consumed",
+            "description": "Cumulative token usage across the full narrative run.",
+            "group": "Story Progress",
+            "order": 11,
+            "decimals": 0,
+            "higher_is_better": True,
+        },
+    ]
+
+    metric_results: list[MetricExtremes] = []
+
+    for definition in metric_definitions:
+        key = definition["key"]
+        values: list[tuple[uuid.UUID, float]] = []
+        for story_id, metrics in aggregates.items():
+            value = metrics.get(key)
+            if value is None:
+                continue
+            values.append((story_id, float(value)))
+
+        if not values:
+            continue
+
+        best_story_id, best_value = max(values, key=lambda item: item[1])
+        worst_story_id, worst_value = min(values, key=lambda item: item[1])
+
+        def build_entry(story_id: uuid.UUID, value: float) -> MetricStoryResult:
+            story = stories[story_id]
+            trend_data = metric_trends.get(key, {}).get(story_id, {})
+            return MetricStoryResult(
+                story_id=story.id,
+                title=story.title,
+                status=story.status,
+                cover_image_url=story.cover_image_url,
+                chapter_count=story.chapter_count,
+                completed_at=story.completed_at,
+                last_activity_at=(
+                    last_activity_by_story.get(story_id)
+                    or story.completed_at
+                    or story.created_at
+                ),
+                total_tokens=story.total_tokens,
+                latest_chapter_number=latest_chapter_numbers.get(story_id)
+                or story.chapter_count
+                or None,
+                premise=story.premise,
+                genre_tags=story.genre_tags,
+                style_authors=story.style_authors,
+                narrative_perspective=story.narrative_perspective,
+                tone=story.tone,
+                estimated_reading_time_minutes=story.estimated_reading_time_minutes,
+                value=value,
+                trend_change=trend_data.get("change"),
+                trend_samples=trend_data.get("samples"),
+            )
+
+        metric_results.append(
+            MetricExtremes(
+                key=key,
+                label=definition["label"],
+                description=definition.get("description"),
+                group=definition["group"],
+                order=definition["order"],
+                unit=definition.get("unit"),
+                decimals=definition.get("decimals", 2),
+                higher_is_better=definition.get("higher_is_better", True),
+                priority=definition.get("priority", False),
+                best=build_entry(best_story_id, best_value),
+                worst=build_entry(worst_story_id, worst_value),
+            )
+        )
+
+    metric_results.sort(key=lambda item: item.order)
+    return {"metrics": [metric.model_dump() for metric in metric_results]}
 
 
 @app.websocket("/ws/stories")
