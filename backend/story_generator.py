@@ -129,7 +129,9 @@ def _sanitize_content_settings(
         defaults = base.get(axis, {})
         average_level = _clamp(
             _coerce_float(
-                axis_payload.get("average_level") if isinstance(axis_payload, Mapping) else None,
+                axis_payload.get("average_level")
+                if isinstance(axis_payload, Mapping)
+                else None,
                 defaults.get("average_level", 0.0),
             ),
             0.0,
@@ -137,7 +139,9 @@ def _sanitize_content_settings(
         )
         momentum = _clamp(
             _coerce_float(
-                axis_payload.get("momentum") if isinstance(axis_payload, Mapping) else None,
+                axis_payload.get("momentum")
+                if isinstance(axis_payload, Mapping)
+                else None,
                 defaults.get("momentum", 0.0),
             ),
             -1.0,
@@ -145,7 +149,9 @@ def _sanitize_content_settings(
         )
         multiplier = _clamp(
             _coerce_float(
-                axis_payload.get("premise_multiplier") if isinstance(axis_payload, Mapping) else None,
+                axis_payload.get("premise_multiplier")
+                if isinstance(axis_payload, Mapping)
+                else None,
                 defaults.get("premise_multiplier", 1.0),
             ),
             0.0,
@@ -177,7 +183,9 @@ def _generate_story_content_settings(
         base_momentum = _clamp(axis_config.momentum, -1.0, 1.0)
         base_multiplier = _clamp(axis_config.premise_multiplier, 0.0, 10.0)
         jittered_average = _clamp(base_average + random.uniform(-1.0, 1.0), 0.0, 10.0)
-        jittered_momentum = _clamp(base_momentum + random.uniform(-0.15, 0.15), -1.0, 1.0)
+        jittered_momentum = _clamp(
+            base_momentum + random.uniform(-0.15, 0.15), -1.0, 1.0
+        )
         jittered_multiplier = _clamp(
             base_multiplier * random.uniform(0.85, 1.15),
             0.0,
@@ -287,7 +295,7 @@ def _intensity_descriptor(level: float) -> str:
 
 
 def _format_content_prompt_lines(
-    content_settings: Mapping[str, Mapping[str, float]]
+    content_settings: Mapping[str, Mapping[str, float]],
 ) -> tuple[str, str]:
     if not content_settings:
         return "", ""
@@ -303,7 +311,7 @@ def _format_content_prompt_lines(
         momentum = float(values.get("momentum", 0.0))
         multiplier = float(values.get("premise_multiplier", 1.0))
         descriptive_lines.append(
-            f"- {label}: target average {average_level:.1f}/10, { _momentum_description(momentum) }, premise emphasis x{multiplier:.2f}"
+            f"- {label}: target average {average_level:.1f}/10, {_momentum_description(momentum)}, premise emphasis x{multiplier:.2f}"
         )
         json_lines.append(
             f'    "{axis}": {{"average_level": {average_level:.3f}, "momentum": {momentum:.3f}, "premise_multiplier": {multiplier:.3f}}}'
@@ -334,13 +342,9 @@ def _describe_cover_axes(
         if not mood:
             mood = axis.replace("_", " ").title()
         intensity = _intensity_descriptor(average)
-        momentum = float(
-            content_settings.get(axis, {}).get("momentum", 0.0)
-        )
+        momentum = float(content_settings.get(axis, {}).get("momentum", 0.0))
         trend = _momentum_short(momentum)
-        descriptions.append(
-            f"{intensity.title()} {mood}, {trend} across chapters"
-        )
+        descriptions.append(f"{intensity.title()} {mood}, {trend} across chapters")
     return "; ".join(descriptions)
 
 
@@ -386,6 +390,7 @@ def _sanitize_content_levels(
         sanitized_value = _clamp(_coerce_float(raw_value, fallback), 0.0, 10.0)
         sanitized[axis] = round(sanitized_value, 3)
     return sanitized
+
 
 _HURLLOL_LEXICON: dict[str, tuple[str, ...]] = {
     "H": (
@@ -469,11 +474,7 @@ def _render_premise_prompt(
                 f"{descriptive_lines}\n"
             )
         if json_lines:
-            content_json_block = (
-                '  "content_settings": {\n'
-                f"{json_lines}\n"
-                "  },\n"
-            )
+            content_json_block = f'  "content_settings": {{\n{json_lines}\n  }},\n'
     if not content_json_block:
         content_json_block = (
             '  "content_settings": {\n'
@@ -574,9 +575,13 @@ async def _summarize_recent_story_stats(session, window: int) -> dict[str, Any]:
         if story.narrative_perspective:
             perspectives[story.narrative_perspective.lower()] += 1
         if story.genre_tags:
-            genres.update(tag.lower() for tag in story.genre_tags if isinstance(tag, str))
+            genres.update(
+                tag.lower() for tag in story.genre_tags if isinstance(tag, str)
+            )
         if story.style_authors:
-            authors.update(author for author in story.style_authors if isinstance(author, str))
+            authors.update(
+                author for author in story.style_authors if isinstance(author, str)
+            )
 
         if story.absurdity_initial is not None:
             absurdity_initials.append(float(story.absurdity_initial))
@@ -722,7 +727,7 @@ async def _request_prompt_variation_from_model(
         "Encourage swings into underexplored tones, structures, settings, or narrative devices.",
         "Then explain your reasoning in <=80 words.",
         "",
-        "Return only valid JSON: {\"directives\": [\"directive1\", ...], \"rationale\": \"brief explanation\"}.",
+        'Return only valid JSON: {"directives": ["directive1", ...], "rationale": "brief explanation"}.',
     ]
     prompt = "\n".join(prompt_lines)
 
@@ -754,11 +759,17 @@ async def _ensure_prompt_state(session, config) -> tuple[dict[str, Any], bool]:
     stats = await _summarize_recent_story_stats(
         session, int(config.premise_prompt_stats_window)
     )
-    variation_strength = max(0.0, min(1.0, float(config.premise_prompt_variation_strength)))
+    variation_strength = max(
+        0.0, min(1.0, float(config.premise_prompt_variation_strength))
+    )
     try:
-        variation = await _request_prompt_variation_from_model(stats, variation_strength)
+        variation = await _request_prompt_variation_from_model(
+            stats, variation_strength
+        )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Prompt remix request failed, using fallback directives: %s", exc)
+        logger.exception(
+            "Prompt remix request failed, using fallback directives: %s", exc
+        )
         variation = _fallback_prompt_variation(stats)
 
     directives = _clean_directives(variation.get("directives", []))
@@ -1114,24 +1125,52 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
 
     logger.info(
         "Generated chaos parameters: absurdity=%.3f+%.3f, surrealism=%.3f+%.3f, ridiculousness=%.3f+%.3f, insanity=%.3f+%.3f",
-        absurdity_initial, absurdity_increment,
-        surrealism_initial, surrealism_increment,
-        ridiculousness_initial, ridiculousness_increment,
-        insanity_initial, insanity_increment,
+        absurdity_initial,
+        absurdity_increment,
+        surrealism_initial,
+        surrealism_increment,
+        ridiculousness_initial,
+        ridiculousness_increment,
+        insanity_initial,
+        insanity_increment,
     )
 
     content_settings = _generate_story_content_settings(config)
 
     # List of famous 20th century authors with distinctive styles
     famous_authors = [
-        "Franz Kafka", "Jorge Luis Borges", "Italo Calvino", "Gabriel García Márquez",
-        "Kurt Vonnegut", "Philip K. Dick", "Ursula K. Le Guin", "Stanisław Lem",
-        "Samuel Beckett", "Virginia Woolf", "James Joyce", "William S. Burroughs",
-        "Haruki Murakami", "Octavia Butler", "Ray Bradbury", "Isaac Asimov",
-        "J.G. Ballard", "William Gibson", "Margaret Atwood", "Aldous Huxley",
-        "George Orwell", "Arthur C. Clarke", "Doris Lessing", "Thomas Pynchon",
-        "Don DeLillo", "Chinua Achebe", "Toni Morrison", "Gabriel García Márquez",
-        "Salman Rushdie", "Milan Kundera", "Cormac McCarthy", "Vladimir Nabokov"
+        "Franz Kafka",
+        "Jorge Luis Borges",
+        "Italo Calvino",
+        "Gabriel García Márquez",
+        "Kurt Vonnegut",
+        "Philip K. Dick",
+        "Ursula K. Le Guin",
+        "Stanisław Lem",
+        "Samuel Beckett",
+        "Virginia Woolf",
+        "James Joyce",
+        "William S. Burroughs",
+        "Haruki Murakami",
+        "Octavia Butler",
+        "Ray Bradbury",
+        "Isaac Asimov",
+        "J.G. Ballard",
+        "William Gibson",
+        "Margaret Atwood",
+        "Aldous Huxley",
+        "George Orwell",
+        "Arthur C. Clarke",
+        "Doris Lessing",
+        "Thomas Pynchon",
+        "Don DeLillo",
+        "Chinua Achebe",
+        "Toni Morrison",
+        "Gabriel García Márquez",
+        "Salman Rushdie",
+        "Milan Kundera",
+        "Cormac McCarthy",
+        "Vladimir Nabokov",
     ]
 
     # Randomly select 1-3 authors
@@ -1142,13 +1181,21 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
 
     # Build style instruction
     if len(selected_authors) == 1:
-        style_instruction = f"- Adopt the writing style and sensibilities of {selected_authors[0]}"
+        style_instruction = (
+            f"- Adopt the writing style and sensibilities of {selected_authors[0]}"
+        )
     else:
-        authors_list = ", ".join(selected_authors[:-1]) + f", and {selected_authors[-1]}"
-        style_instruction = f"- Blend the writing styles and sensibilities of {authors_list}"
+        authors_list = (
+            ", ".join(selected_authors[:-1]) + f", and {selected_authors[-1]}"
+        )
+        style_instruction = (
+            f"- Blend the writing styles and sensibilities of {authors_list}"
+        )
 
     prompt_state = await _load_current_prompt_state()
-    directives = prompt_state.get("directives", []) if isinstance(prompt_state, dict) else []
+    directives = (
+        prompt_state.get("directives", []) if isinstance(prompt_state, dict) else []
+    )
     prompt = _render_premise_prompt(style_instruction, directives, content_settings)
     raw_strength = (
         prompt_state.get("variation_strength")
@@ -1156,7 +1203,9 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
         else None
     )
     try:
-        variation_strength_value = float(raw_strength) if raw_strength is not None else 0.0
+        variation_strength_value = (
+            float(raw_strength) if raw_strength is not None else 0.0
+        )
     except (TypeError, ValueError):
         variation_strength_value = 0.0
     logger.debug(
@@ -1472,10 +1521,19 @@ async def generate_chapter(
     chapter_number: int,
 ) -> dict[str, Any]:
     # Calculate expected chaos parameters for this chapter
-    expected_absurdity = story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
-    expected_surrealism = story.surrealism_initial + (chapter_number - 1) * story.surrealism_increment
-    expected_ridiculousness = story.ridiculousness_initial + (chapter_number - 1) * story.ridiculousness_increment
-    expected_insanity = story.insanity_initial + (chapter_number - 1) * story.insanity_increment
+    expected_absurdity = (
+        story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
+    )
+    expected_surrealism = (
+        story.surrealism_initial + (chapter_number - 1) * story.surrealism_increment
+    )
+    expected_ridiculousness = (
+        story.ridiculousness_initial
+        + (chapter_number - 1) * story.ridiculousness_increment
+    )
+    expected_insanity = (
+        story.insanity_initial + (chapter_number - 1) * story.insanity_increment
+    )
 
     logger.info(
         "Chapter %d chaos parameters: absurdity=%.3f, surrealism=%.3f, ridiculousness=%.3f, insanity=%.3f",
@@ -1526,9 +1584,7 @@ async def generate_chapter(
     if not content_levels_example_lines:
         content_levels_example_lines.append('    "sexual_content": 0.000')
     content_levels_example = (
-        '  "content_levels": {\n'
-        + ",\n".join(content_levels_example_lines)
-        + "\n  }\n"
+        '  "content_levels": {\n' + ",\n".join(content_levels_example_lines) + "\n  }\n"
     )
 
     # Build style instruction if authors are specified
@@ -1537,7 +1593,9 @@ async def generate_chapter(
         if len(story.style_authors) == 1:
             style_instruction = f"\nSTYLE GUIDE: Write in the style and sensibilities of {story.style_authors[0]}. Do not mention this author by name in the text.\n"
         else:
-            authors_list = ", ".join(story.style_authors[:-1]) + f", and {story.style_authors[-1]}"
+            authors_list = (
+                ", ".join(story.style_authors[:-1]) + f", and {story.style_authors[-1]}"
+            )
             style_instruction = f"\nSTYLE GUIDE: Blend the writing styles and sensibilities of {authors_list}. Do not mention these authors by name in the text.\n"
 
     # Add narrative perspective and tone guidance if available
@@ -1572,7 +1630,7 @@ async def generate_chapter(
         f'  "insanity": {expected_insanity:.3f},\n'
         f"{content_levels_example}"
         "}\n\n"
-        "Return the EXACT chaos parameter values provided above in your response. Provide the \"content_levels\" readings on a 0-10 scale to reflect how intense each axis became in this chapter."
+        'Return the EXACT chaos parameter values provided above in your response. Provide the "content_levels" readings on a 0-10 scale to reflect how intense each axis became in this chapter.'
     )
 
     start = time.perf_counter()
@@ -1582,7 +1640,7 @@ async def generate_chapter(
         max_tokens=_settings.openai_max_tokens_chapter,
         temperature=_settings.openai_temperature_chapter,
     )
-    
+
     # Try to parse JSON response
     parsed = _safe_json_loads(text)
     chapter_content = text.strip()
@@ -1590,10 +1648,8 @@ async def generate_chapter(
     actual_surrealism = expected_surrealism
     actual_ridiculousness = expected_ridiculousness
     actual_insanity = expected_insanity
-    
-    sanitized_content_levels = _sanitize_content_levels(
-        {}, expected_content_levels
-    )
+
+    sanitized_content_levels = _sanitize_content_levels({}, expected_content_levels)
     if parsed and isinstance(parsed, dict):
         chapter_content = parsed.get("chapter_content", text.strip())
         actual_absurdity = parsed.get("absurdity", expected_absurdity)
@@ -1605,23 +1661,23 @@ async def generate_chapter(
         )
         logger.info(
             "✓ Chapter %d generated with chaos parameters from OpenAI response",
-            chapter_number
+            chapter_number,
         )
     else:
         logger.warning(
             "Failed to parse chapter JSON response, using text as-is and expected chaos values"
         )
-    
+
     chapter_content = _clean_chapter_content(chapter_content)
 
     if _needs_conclusion(chapter_content):
         chapter_content = await _complete_chapter(story, chapter_content)
-    
+
     elapsed = int((time.perf_counter() - start) * 1000)
     tokens_used: int | None = None
     if usage:
         tokens_used = usage.get("completion_tokens") or usage.get("total_tokens")
-    
+
     return {
         "chapter_number": chapter_number,
         "content": chapter_content.strip(),
@@ -1658,7 +1714,9 @@ async def generate_cover_image(
     axis_summary = _describe_cover_axes(sanitized_content_settings)
     safe_title = _sanitize_cover_prompt_text(story_title)
     safe_premise = _sanitize_cover_prompt_text(premise_summary)
-    safe_axis_summary = _sanitize_cover_prompt_text(axis_summary) if axis_summary else ""
+    safe_axis_summary = (
+        _sanitize_cover_prompt_text(axis_summary) if axis_summary else ""
+    )
     tone_clause = ""
     if axis_summary:
         tone_clause = (
@@ -1671,7 +1729,6 @@ async def generate_cover_image(
         f"Story premise: {safe_premise}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
         "Style: modern sci-fi book cover, professional, dramatic lighting. "
-        "Ensure the imagery stays PG-13: avoid nudity, explicit intimacy, graphic violence, or gore. "
         f"Render the title text '{safe_title}' clearly within the artwork, integrating it into the scene with polished typography."
         f"{tone_clause}"
     )
@@ -1732,7 +1789,9 @@ async def generate_cover_image(
             )
             return data_url
 
-        logger.warning("✗ No image URL or base64 data returned for story: %s", story_title)
+        logger.warning(
+            "✗ No image URL or base64 data returned for story: %s", story_title
+        )
         return ""
 
     except OpenAIError as exc:
