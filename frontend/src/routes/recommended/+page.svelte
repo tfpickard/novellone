@@ -16,14 +16,48 @@
   const formatStatus = (status: string) =>
     status ? status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : '';
 
-  const normalizeGenreLabel = (value: string) => value.trim();
+  const normalizeGenreLabel = (value: string) => value.replace(/\s+/g, ' ').trim();
+  const cleanGenreSegment = (value: string) =>
+    normalizeGenreLabel(value)
+      .replace(/^(?:and|with|featuring)\s+/i, '')
+      .replace(/^(?:a|an|the)\s+/i, '')
+      .replace(/[.!?]+$/, '');
+  const explodeGenreTag = (value: string) => {
+    const normalized = normalizeGenreLabel(value);
+    if (!normalized) return [] as string[];
+    const separators = /[,;:\/•·|&]+/;
+    const dashSplit = normalized.split(/\s*[–—]\s*|\s+-\s+/);
+    const segments = dashSplit
+      .map((segment) => segment.split(separators))
+      .flat()
+      .map((segment) => cleanGenreSegment(segment))
+      .filter(Boolean);
+    return segments.length > 0 ? segments : [normalized];
+  };
+  const explodeGenreTags = (values: string[] | null | undefined) => {
+    if (!values) return [] as string[];
+    const tags: string[] = [];
+    const seen = new Set<string>();
+    const keyFor = (value: string) => normalizeGenreLabel(value).toLowerCase();
+    for (const value of values) {
+      if (!value) continue;
+      for (const segment of explodeGenreTag(value)) {
+        if (!segment) continue;
+        const key = keyFor(segment);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        tags.push(segment);
+      }
+    }
+    return tags;
+  };
   const genreKey = (value: string) => normalizeGenreLabel(value).toLowerCase();
 
   const availableStatuses = Array.from(new Set(allEntries.map((entry) => entry.status))).sort();
 
   const genreAggregates = new Map<string, { label: string; count: number }>();
   for (const entry of allEntries) {
-    for (const tag of entry.genre_tags ?? []) {
+    for (const tag of explodeGenreTags(entry.genre_tags)) {
       if (!tag) continue;
       const label = normalizeGenreLabel(tag);
       if (!label) continue;
@@ -136,7 +170,7 @@
       return false;
     }
     if (selectedGenre !== 'all') {
-      const genres = (entry.genre_tags ?? []).map((genre) => genreKey(genre));
+      const genres = explodeGenreTags(entry.genre_tags).map((genre) => genreKey(genre));
       if (!genres.includes(selectedGenre)) {
         return false;
       }
@@ -414,9 +448,10 @@
                               <span>Updated {formatRelativeTime(metric.best.last_activity_at)}</span>
                             {/if}
                           </div>
-                          {#if metric.best.genre_tags?.length}
+                          {@const bestGenres = explodeGenreTags(metric.best.genre_tags)}
+                          {#if bestGenres.length}
                             <div class="story-genres">
-                              {#each metric.best.genre_tags as genre}
+                              {#each bestGenres as genre}
                                 {@const label = normalizeGenreLabel(genre)}
                                 {@const key = genreKey(genre)}
                                 {#if label}
@@ -532,9 +567,10 @@
                               <span>Updated {formatRelativeTime(metric.worst.last_activity_at)}</span>
                             {/if}
                           </div>
-                          {#if metric.worst.genre_tags?.length}
+                          {@const worstGenres = explodeGenreTags(metric.worst.genre_tags)}
+                          {#if worstGenres.length}
                             <div class="story-genres">
-                              {#each metric.worst.genre_tags as genre}
+                              {#each worstGenres as genre}
                                 {@const label = normalizeGenreLabel(genre)}
                                 {@const key = genreKey(genre)}
                                 {#if label}
