@@ -16,18 +16,30 @@
   const formatStatus = (status: string) =>
     status ? status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : '';
 
-  const normalizeGenreLabel = (value: string) => value.replace(/\s+/g, ' ').trim();
+  const normalizeGenreLabel = (value: string) =>
+    value
+      .replace(/&amp;/gi, '&')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const stripMarkup = (value: string) => value.replace(/\[[^\]]*\]/g, ' ').replace(/<[^>]*>/g, ' ');
   const cleanGenreSegment = (value: string) =>
     normalizeGenreLabel(value)
-      .replace(/^(?:and|with|featuring)\s+/i, '')
+      .replace(/^['"‘’“”]+|['"‘’“”]+$/g, '')
+      .replace(/^\((.*)\)$/g, '$1')
+      .replace(/^(?:and|with|featuring|versus|vs\.?|against|plus|or|x|x's)\s+/i, '')
       .replace(/^(?:a|an|the)\s+/i, '')
+      .replace(/[()]+$/g, '')
+      .replace(/^[()]+/g, '')
       .replace(/[.!?]+$/, '');
   const explodeGenreTag = (value: string) => {
-    const normalized = normalizeGenreLabel(value);
+    const normalized = normalizeGenreLabel(stripMarkup(value));
     if (!normalized) return [] as string[];
     const separators = /[,;:\/•·|&+]+/;
-    const connectorBreaks = /\b(?:and|with|featuring|versus|vs\.?|against|plus)\b/gi;
-    const dashSplit = normalized.split(/\s*[–—]\s*|\s+-\s+/);
+    const connectorBreaks = /\b(?:and\/or|and|with|featuring|versus|vs\.?|against|plus|or|x|x's)\b/gi;
+    const dashSplit = normalized
+      .replace(/[\r\n]+/g, ',')
+      .replace(/\(([^)]+)\)/g, (_, inner: string) => `,${inner},`)
+      .split(/\s*[–—]\s*|\s+-\s+/);
     const segments = dashSplit
       .map((segment) => segment.replace(connectorBreaks, ','))
       .map((segment) => segment.split(separators))
