@@ -252,7 +252,7 @@ async def _sanitize_cover_prompt_with_model(prompt: str) -> str:
                     ),
                 },
             ],
-            max_tokens=600,
+            max_completion_tokens=600,
         )
     except Exception:  # noqa: BLE001
         logger.exception("gpt-5-nano prompt sanitization failed")
