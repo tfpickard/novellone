@@ -506,168 +506,6 @@
         {/if}
       </aside>
 
-      {#if hasUniverseContext(universe)}
-        <aside class="universe-panel">
-          <h3>Shared Universe</h3>
-          {#if universe?.cluster_id}
-            <div class="universe-cluster">
-              <div class="cluster-label">{universe?.cluster_label ?? 'Continuity Cluster'}</div>
-              <div class="cluster-meta">
-                <span><strong>{universe?.cluster_size ?? 0}</strong> stories linked</span>
-                <span>Cohesion <strong>{formatCohesion(universe?.cohesion)}</strong></span>
-              </div>
-            </div>
-          {/if}
-
-          {#if universe?.related_stories?.length}
-            <div class="related-block">
-              <h4>Intersecting Stories</h4>
-              <ul>
-                {#each universe.related_stories as related}
-                  <li>
-                    <a href={`/story/${related.story_id}`}>
-                      <div class="related-heading">
-                        <strong>{related.title || 'Untitled Story'}</strong>
-                        <span class="related-weight">Affinity {formatCohesion(related.weight)}</span>
-                      </div>
-                      {#if related.shared_entities?.length}
-                        <div class="shared-row">
-                          <span class="shared-label">Characters</span>
-                          <div class="shared-chips">
-                            {#each related.shared_entities.slice(0, 4) as entity}
-                              <span class="chip">{entity}</span>
-                            {/each}
-                            {#if related.shared_entities.length > 4}
-                              <span class="chip more">+{related.shared_entities.length - 4}</span>
-                            {/if}
-                          </div>
-                        </div>
-                      {/if}
-                      {#if related.shared_themes?.length}
-                        <div class="shared-row">
-                          <span class="shared-label">Motifs</span>
-                          <div class="shared-chips">
-                            {#each related.shared_themes.slice(0, 4) as theme}
-                              <span class="chip">{theme}</span>
-                            {/each}
-                            {#if related.shared_themes.length > 4}
-                              <span class="chip more">+{related.shared_themes.length - 4}</span>
-                            {/if}
-                          </div>
-                        </div>
-                      {/if}
-                    </a>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {:else if universe?.cluster_id}
-            <p class="universe-empty">This story shares a continuity thread, but no direct crossovers have surfaced yet.</p>
-          {/if}
-
-          <div class="override-block">
-            <h4>Manual Corrections</h4>
-            {#if isAuthenticated}
-              <form class="override-form" on:submit|preventDefault={submitOverride}>
-                <div class="field">
-                  <label for="override-name">Entity Name</label>
-                  <input
-                    id="override-name"
-                    type="text"
-                    bind:value={overrideName}
-                    placeholder="e.g. Captain Voss"
-                    required
-                  />
-                </div>
-                <div class="field">
-                  <label for="override-action">Action</label>
-                  <select id="override-action" bind:value={overrideAction}>
-                    <option value="suppress">Suppress</option>
-                    <option value="merge">Merge Alias</option>
-                  </select>
-                </div>
-                {#if overrideAction === 'merge'}
-                  <div class="field">
-                    <label for="override-target">Merge Into</label>
-                    <input
-                      id="override-target"
-                      type="text"
-                      bind:value={overrideTarget}
-                      placeholder="Canonical name"
-                      required
-                    />
-                  </div>
-                {/if}
-                <div class="field">
-                  <label for="override-scope">Scope</label>
-                  <select id="override-scope" bind:value={overrideScope}>
-                    <option value="story">This Story</option>
-                    <option value="global">All Stories</option>
-                  </select>
-                </div>
-                <div class="field notes">
-                  <label for="override-notes">Notes</label>
-                  <textarea
-                    id="override-notes"
-                    bind:value={overrideNotes}
-                    rows="1"
-                    placeholder="Optional context or reasoning"
-                  ></textarea>
-                </div>
-                <div class="field action">
-                  <button type="submit" class="override-submit" disabled={overrideSaving}>
-                    {overrideSaving ? 'Saving…' : 'Save Override'}
-                  </button>
-                </div>
-              </form>
-            {:else}
-              <p class="override-info-text">Sign in to manage manual overrides.</p>
-            {/if}
-            {#if overrideError}
-              <p class="override-error">{overrideError}</p>
-            {/if}
-
-            {#if overrides.length}
-              <ul class="override-list">
-                {#each overrides as item (item.id)}
-                  <li class="override-item">
-                    <div class="override-info">
-                      <div class="override-heading">
-                        <span class={`scope-badge ${item.scope}`}>
-                          {item.scope === 'global' ? 'Global' : 'Story'}
-                        </span>
-                        <strong>{item.name}</strong>
-                        <span class="override-action">{item.action}</span>
-                        {#if item.action === 'merge' && item.target_name}
-                          <span class="merge-target">→ {item.target_name}</span>
-                        {/if}
-                      </div>
-                      {#if item.notes}
-                        <p class="override-notes">{item.notes}</p>
-                      {/if}
-                      <div class="override-meta">
-                        Updated {formatTimestamp(item.updated_at)}
-                      </div>
-                    </div>
-                    {#if isAuthenticated}
-                      <button
-                        class="override-remove"
-                        on:click|preventDefault={() => removeOverride(item.id)}
-                        disabled={removingOverrides[item.id]}
-                      >
-                        {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
-                      </button>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {:else}
-              <p class="universe-empty">No manual overrides for this story yet.</p>
-            {/if}
-          </div>
-        </aside>
-      {/if}
-
       <aside class="chaos-params">
         <h3>Chaos Parameters</h3>
         <div class="param">
@@ -761,11 +599,175 @@
       {/if}
     </aside>
 
-    <section class="analysis">
-      <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
-      <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
-    </section>
+  <section class="analysis">
+    <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+    <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
   </section>
+</section>
+
+  {#if hasUniverseContext(universe)}
+    <section class="shared-universe">
+      <div class="universe-panel">
+        <h3>Shared Universe</h3>
+        {#if universe?.cluster_id}
+          <div class="universe-cluster">
+            <div class="cluster-label">{universe?.cluster_label ?? 'Continuity Cluster'}</div>
+            <div class="cluster-meta">
+              <span><strong>{universe?.cluster_size ?? 0}</strong> stories linked</span>
+              <span>Cohesion <strong>{formatCohesion(universe?.cohesion)}</strong></span>
+            </div>
+          </div>
+        {/if}
+
+        {#if universe?.related_stories?.length}
+          <div class="related-block">
+            <h4>Intersecting Stories</h4>
+            <ul>
+              {#each universe.related_stories as related}
+                <li>
+                  <a href={`/story/${related.story_id}`}>
+                    <div class="related-heading">
+                      <strong>{related.title || 'Untitled Story'}</strong>
+                      <span class="related-weight">Affinity {formatCohesion(related.weight)}</span>
+                    </div>
+                    {#if related.shared_entities?.length}
+                      <div class="shared-row">
+                        <span class="shared-label">Characters</span>
+                        <div class="shared-chips">
+                          {#each related.shared_entities.slice(0, 4) as entity}
+                            <span class="chip">{entity}</span>
+                          {/each}
+                          {#if related.shared_entities.length > 4}
+                            <span class="chip more">+{related.shared_entities.length - 4}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                    {#if related.shared_themes?.length}
+                      <div class="shared-row">
+                        <span class="shared-label">Motifs</span>
+                        <div class="shared-chips">
+                          {#each related.shared_themes.slice(0, 4) as theme}
+                            <span class="chip">{theme}</span>
+                          {/each}
+                          {#if related.shared_themes.length > 4}
+                            <span class="chip more">+{related.shared_themes.length - 4}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {:else if universe?.cluster_id}
+          <p class="universe-empty">This story shares a continuity thread, but no direct crossovers have surfaced yet.</p>
+        {/if}
+
+        <div class="override-block">
+          <h4>Manual Corrections</h4>
+          {#if isAuthenticated}
+            <form class="override-form" on:submit|preventDefault={submitOverride}>
+              <div class="field">
+                <label for="override-name">Entity Name</label>
+                <input
+                  id="override-name"
+                  type="text"
+                  bind:value={overrideName}
+                  placeholder="e.g. Captain Voss"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="override-action">Action</label>
+                <select id="override-action" bind:value={overrideAction}>
+                  <option value="suppress">Suppress</option>
+                  <option value="merge">Merge Alias</option>
+                </select>
+              </div>
+              {#if overrideAction === 'merge'}
+                <div class="field">
+                  <label for="override-target">Merge Into</label>
+                  <input
+                    id="override-target"
+                    type="text"
+                    bind:value={overrideTarget}
+                    placeholder="Canonical name"
+                    required
+                  />
+                </div>
+              {/if}
+              <div class="field">
+                <label for="override-scope">Scope</label>
+                <select id="override-scope" bind:value={overrideScope}>
+                  <option value="story">This Story</option>
+                  <option value="global">All Stories</option>
+                </select>
+              </div>
+              <div class="field notes">
+                <label for="override-notes">Notes</label>
+                <textarea
+                  id="override-notes"
+                  bind:value={overrideNotes}
+                  rows="1"
+                  placeholder="Optional context or reasoning"
+                ></textarea>
+              </div>
+              <div class="field action">
+                <button type="submit" class="override-submit" disabled={overrideSaving}>
+                  {overrideSaving ? 'Saving…' : 'Save Override'}
+                </button>
+              </div>
+            </form>
+          {:else}
+            <p class="override-info-text">Sign in to manage manual overrides.</p>
+          {/if}
+          {#if overrideError}
+            <p class="override-error">{overrideError}</p>
+          {/if}
+
+          {#if overrides.length}
+            <ul class="override-list">
+              {#each overrides as item (item.id)}
+                <li class="override-item">
+                  <div class="override-info">
+                    <div class="override-heading">
+                      <span class={`scope-badge ${item.scope}`}>
+                        {item.scope === 'global' ? 'Global' : 'Story'}
+                      </span>
+                      <strong>{item.name}</strong>
+                      <span class="override-action">{item.action}</span>
+                      {#if item.action === 'merge' && item.target_name}
+                        <span class="merge-target">→ {item.target_name}</span>
+                      {/if}
+                    </div>
+                    {#if item.notes}
+                      <p class="override-notes">{item.notes}</p>
+                    {/if}
+                    <div class="override-meta">
+                      Updated {formatTimestamp(item.updated_at)}
+                    </div>
+                  </div>
+                  {#if isAuthenticated}
+                    <button
+                      class="override-remove"
+                      on:click|preventDefault={() => removeOverride(item.id)}
+                      disabled={removingOverrides[item.id]}
+                    >
+                      {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
+                    </button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="universe-empty">No manual overrides for this story yet.</p>
+          {/if}
+        </div>
+      </div>
+    </section>
+  {/if}
 </div>
 
 {#if coverModalOpen && story.cover_image_url}
@@ -1278,6 +1280,10 @@
     display: flex;
     flex-direction: column;
     gap: 2.5rem;
+  }
+
+  .shared-universe {
+    margin-top: 3rem;
   }
 
   .analysis {
