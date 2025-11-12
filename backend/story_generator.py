@@ -1649,22 +1649,8 @@ async def generate_cover_image(
     # Limit premise to avoid prompt length issues
     premise_summary = story_premise[:200] if len(story_premise) > 200 else story_premise
 
-    sanitized_content_settings: Mapping[str, Mapping[str, float]] = {}
-    if content_settings:
-        sanitized_content_settings = _sanitize_content_settings(
-            content_settings,
-            content_settings,
-        )
-    axis_summary = _describe_cover_axes(sanitized_content_settings)
     safe_title = _sanitize_cover_prompt_text(story_title)
     safe_premise = _sanitize_cover_prompt_text(premise_summary)
-    safe_axis_summary = _sanitize_cover_prompt_text(axis_summary) if axis_summary else ""
-    tone_clause = ""
-    if axis_summary:
-        tone_clause = (
-            " Content tone cues (keep imagery tasteful, symbolic, and policy-compliant—no explicit depictions): "
-            f"{safe_axis_summary}."
-        )
 
     base_prompt = (
         f"Book cover art for a science fiction story titled '{safe_title}'. "
@@ -1673,7 +1659,6 @@ async def generate_cover_image(
         "Style: modern sci-fi book cover, professional, dramatic lighting. "
         "Ensure the imagery stays PG-13: avoid nudity, explicit intimacy, graphic violence, or gore. "
         f"Render the title text '{safe_title}' clearly within the artwork, integrating it into the scene with polished typography."
-        f"{tone_clause}"
     )
 
     logger.info("Generating cover image for story: %s", story_title)
