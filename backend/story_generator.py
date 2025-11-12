@@ -1729,6 +1729,7 @@ async def generate_cover_image(
         f"Story premise: {safe_premise}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
         "Style: modern sci-fi book cover, professional, dramatic lighting. "
+        "Ensure the imagery stays PG-13: avoid nudity, explicit intimacy, graphic violence, or gore. "
         f"Render the title text '{safe_title}' clearly within the artwork, integrating it into the scene with polished typography."
         f"{tone_clause}"
     )
