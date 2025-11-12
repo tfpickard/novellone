@@ -385,7 +385,88 @@
         {/if}
       </div>
     </div>
-    <div class="side-panel">
+    
+  </header>
+
+  {#if story.status === 'completed' && story.completion_reason}
+    <div class="completion">
+      Story completed: {story.completion_reason}
+    </div>
+  {/if}
+
+  <section class="chapters">
+    {#each story.chapters as chapter (chapter.id)}
+      <article class="chapter" id={`chapter-${chapter.chapter_number}`}>
+        <div class="chapter-header">
+          <div>
+            <h2>Chapter {chapter.chapter_number}</h2>
+            <time>{new Date(chapter.created_at).toLocaleString()}</time>
+          </div>
+          <div class="chapter-metadata">
+            {#if chapter.absurdity !== null && chapter.absurdity !== undefined}
+              <div class="chapter-chaos">
+                <div class="chaos-badge" style="background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5);">
+                  <span class="chaos-label">A</span>
+                  <span class="chaos-value">{chapter.absurdity.toFixed(2)}</span>
+                </div>
+                <div class="chaos-badge" style="background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5);">
+                  <span class="chaos-label">S</span>
+                  <span class="chaos-value">{chapter.surrealism?.toFixed(2) ?? 'N/A'}</span>
+                </div>
+                <div class="chaos-badge" style="background: rgba(236, 72, 153, 0.2); border-color: rgba(236, 72, 153, 0.5);">
+                  <span class="chaos-label">R</span>
+                  <span class="chaos-value">{chapter.ridiculousness?.toFixed(2) ?? 'N/A'}</span>
+                </div>
+                <div class="chaos-badge" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);">
+                  <span class="chaos-label">I</span>
+                  <span class="chaos-value">{chapter.insanity?.toFixed(2) ?? 'N/A'}</span>
+                </div>
+              </div>
+            {/if}
+            {#if chapterTopAxes(chapter).length}
+              <div class="chapter-content-levels">
+                {#each chapterTopAxes(chapter) as axis (axis.key)}
+                  <span
+                    class="content-level-badge"
+                    style={`--axis-color:${CONTENT_AXIS_METADATA[axis.key].color}; --axis-color-soft:${CONTENT_AXIS_METADATA[axis.key].color}26`}
+                  >
+                    <span class="content-label">{CONTENT_AXIS_METADATA[axis.key].label}</span>
+                    <span class="content-value">{axis.value.toFixed(1)}</span>
+                  </span>
+                {/each}
+              </div>
+            {/if}
+            {#if chapter.stats}
+              <div class="chapter-stats">
+                <span class="stat-item" title="Word count">
+                  <span class="stat-label">Words:</span>
+                  <span class="stat-value">{chapter.stats.word_count}</span>
+                </span>
+                <span class="stat-item" title="Average word length">
+                  <span class="stat-label">Avg:</span>
+                  <span class="stat-value">{chapter.stats.avg_word_length} chars</span>
+                </span>
+                <span class="stat-item" title="Sentence count">
+                  <span class="stat-label">Sentences:</span>
+                  <span class="stat-value">{chapter.stats.sentence_count}</span>
+                </span>
+                <span class="stat-item" title="Lexical diversity">
+                  <span class="stat-label">Diversity:</span>
+                  <span class="stat-value">{(chapter.stats.lexical_diversity * 100).toFixed(1)}%</span>
+                </span>
+              </div>
+            {/if}
+          </div>
+        </div>
+        <div class="chapter-body">
+          {@html renderMarkdown(chapter.content)}
+        </div>
+      </article>
+    {/each}
+  </section>
+
+  <section class="story-insights">
+    <aside class="side-panel">
       <aside class="meta">
         <div>
           <span>Chapters</span>
@@ -618,6 +699,7 @@
           <span class="param-value">{story.insanity_initial.toFixed(2)} +{story.insanity_increment.toFixed(2)}/ch</span>
         </div>
       </aside>
+
       <aside class="content-params">
         <h3>Content Axes</h3>
         <div class="content-axis-grid">
@@ -652,6 +734,7 @@
           {/each}
         </div>
       </aside>
+
       {#if story.status === 'active' && isAuthenticated}
         <button class="generate-button" on:click={handleGenerateChapter} disabled={generating}>
           {generating ? 'Generating…' : 'Generate New Chapter'}
@@ -676,89 +759,12 @@
       {#if generateError}
         <p class="generate-error">{generateError}</p>
       {/if}
-    </div>
-  </header>
+    </aside>
 
-  {#if story.status === 'completed' && story.completion_reason}
-    <div class="completion">
-      Story completed: {story.completion_reason}
-    </div>
-  {/if}
-
-  <section class="analysis">
-    <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
-    <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
-  </section>
-
-  <section class="chapters">
-    {#each story.chapters as chapter (chapter.id)}
-      <article class="chapter" id={`chapter-${chapter.chapter_number}`}>
-        <div class="chapter-header">
-          <div>
-            <h2>Chapter {chapter.chapter_number}</h2>
-            <time>{new Date(chapter.created_at).toLocaleString()}</time>
-          </div>
-          <div class="chapter-metadata">
-            {#if chapter.absurdity !== null && chapter.absurdity !== undefined}
-              <div class="chapter-chaos">
-                <div class="chaos-badge" style="background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5);">
-                  <span class="chaos-label">A</span>
-                  <span class="chaos-value">{chapter.absurdity.toFixed(2)}</span>
-                </div>
-                <div class="chaos-badge" style="background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5);">
-                  <span class="chaos-label">S</span>
-                  <span class="chaos-value">{chapter.surrealism?.toFixed(2) ?? 'N/A'}</span>
-                </div>
-                <div class="chaos-badge" style="background: rgba(236, 72, 153, 0.2); border-color: rgba(236, 72, 153, 0.5);">
-                  <span class="chaos-label">R</span>
-                  <span class="chaos-value">{chapter.ridiculousness?.toFixed(2) ?? 'N/A'}</span>
-                </div>
-                <div class="chaos-badge" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5);">
-                  <span class="chaos-label">I</span>
-                  <span class="chaos-value">{chapter.insanity?.toFixed(2) ?? 'N/A'}</span>
-                </div>
-              </div>
-            {/if}
-            {#if chapterTopAxes(chapter).length}
-              <div class="chapter-content-levels">
-                {#each chapterTopAxes(chapter) as axis (axis.key)}
-                  <span
-                    class="content-level-badge"
-                    style={`--axis-color:${CONTENT_AXIS_METADATA[axis.key].color}; --axis-color-soft:${CONTENT_AXIS_METADATA[axis.key].color}26`}
-                  >
-                    <span class="content-label">{CONTENT_AXIS_METADATA[axis.key].label}</span>
-                    <span class="content-value">{axis.value.toFixed(1)}</span>
-                  </span>
-                {/each}
-              </div>
-            {/if}
-            {#if chapter.stats}
-              <div class="chapter-stats">
-                <span class="stat-item" title="Word count">
-                  <span class="stat-label">Words:</span>
-                  <span class="stat-value">{chapter.stats.word_count}</span>
-                </span>
-                <span class="stat-item" title="Average word length">
-                  <span class="stat-label">Avg:</span>
-                  <span class="stat-value">{chapter.stats.avg_word_length} chars</span>
-                </span>
-                <span class="stat-item" title="Sentence count">
-                  <span class="stat-label">Sentences:</span>
-                  <span class="stat-value">{chapter.stats.sentence_count}</span>
-                </span>
-                <span class="stat-item" title="Lexical diversity">
-                  <span class="stat-label">Diversity:</span>
-                  <span class="stat-value">{(chapter.stats.lexical_diversity * 100).toFixed(1)}%</span>
-                </span>
-              </div>
-            {/if}
-          </div>
-        </div>
-        <div class="chapter-body">
-          {@html renderMarkdown(chapter.content)}
-        </div>
-      </article>
-    {/each}
+    <section class="analysis">
+      <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+      <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+    </section>
   </section>
 </div>
 
@@ -1264,16 +1270,20 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
-    max-height: 60vh;
-    overflow-y: auto;
-    padding-right: 1rem;
+    margin-top: 2.5rem;
+    margin-bottom: 3rem;
+  }
+
+  .story-insights {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
   }
 
   .analysis {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    margin-bottom: 2rem;
   }
 
   .chapter {
