@@ -62,13 +62,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Hurl Unmasks Recursive Literature Leaking Out Light", version="1.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if settings.cors_allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
 async def get_db_session():
@@ -1794,9 +1795,5 @@ async def admin_reset_system(
 async def handle_not_found(_: Request, exc: NoResultFound) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
-
-from debug_routes import router as debug_router
-
-app.include_router(debug_router)
 
 __all__ = ["app"]

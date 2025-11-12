@@ -74,35 +74,44 @@ class AppSettings(BaseSettings):
 
     public_api_url: Annotated[str | None, Field(default=None, alias="PUBLIC_API_URL")]
 
-    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
-    admin_password: str = Field(default="stupishly", alias="ADMIN_PASSWORD")
-    admin_password_hash: str = Field(default="", alias="ADMIN_PASSWORD_HASH")
-    session_secret: str = Field("stupishly", alias="SESSION_SECRET")
+    admin_username: str = Field(..., alias="ADMIN_USERNAME", min_length=1)
+    admin_password: str | None = Field(default=None, alias="ADMIN_PASSWORD")
+    admin_password_hash: str = Field(default=None, alias="ADMIN_PASSWORD_HASH")
+    session_secret: str = Field(..., alias="SESSION_SECRET", min_length=32)
     session_ttl_seconds: int = Field(7 * 24 * 3600, alias="SESSION_TTL_SECONDS")
     session_cookie_name: str = Field("novellone_session", alias="SESSION_COOKIE_NAME")
     session_cookie_domain: Annotated[
         str | None, Field(default=None, alias="SESSION_COOKIE_DOMAIN")
     ]
-    session_cookie_secure: bool = Field(False, alias="SESSION_COOKIE_SECURE")
+    session_cookie_secure: bool = Field(True, alias="SESSION_COOKIE_SECURE")
     session_cookie_samesite: Literal["lax", "strict", "none"] = Field(
         "lax", alias="SESSION_COOKIE_SAMESITE"
+    )
+    cors_allowed_origins: list[str] = Field(
+        default_factory=list, alias="CORS_ALLOWED_ORIGINS"
+    )
+    cors_allow_credentials: bool = Field(
+        False, alias="CORS_ALLOW_CREDENTIALS"
     )
 
     @field_validator("admin_password_hash", mode="after")
     @classmethod
-    def hash_admin_password(cls, v: str, info) -> str:
+    def hash_admin_password(cls, v: str | None, info) -> str:
         import sys
         print(f"[DEBUG] hash_admin_password validator called", file=sys.stderr)
         print(f"[DEBUG]   admin_password_hash value: {v!r}", file=sys.stderr)
-        print(f"[DEBUG]   admin_password from info.data: {info.data.get('admin_password', '')!r}", file=sys.stderr)
-        
+        print(
+            f"[DEBUG]   admin_password from info.data: {info.data.get('admin_password', '')!r}",
+            file=sys.stderr,
+        )
+
         # If hash is already provided, use it
         if v:
             print(f"[DEBUG]   Using existing hash", file=sys.stderr)
             return v
-        
+
         # Otherwise hash the cleartext password
-        password = info.data.get("admin_password", "")
+        password = info.data.get("admin_password")
         if not password:
             print(f"[DEBUG]   ERROR: Both password and hash are empty!", file=sys.stderr)
             raise ValueError("Either ADMIN_PASSWORD or ADMIN_PASSWORD_HASH must be set")
@@ -119,6 +128,27 @@ class AppSettings(BaseSettings):
         hashed = pwd_context.hash(password)
         print(f"[DEBUG]   Generated hash: {hashed[:20]}...", file=sys.stderr)
         return hashed
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: str | list[str] | None):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            parts = [origin.strip() for origin in value.split(",")]
+            cleaned = [origin for origin in parts if origin]
+        else:
+            cleaned = list(value)
+        if any(origin == "*" for origin in cleaned):
+            raise ValueError("CORS_ALLOWED_ORIGINS cannot include wildcard '*'")
+        return cleaned
+
+    @field_validator("session_secret")
+    @classmethod
+    def validate_session_secret(cls, value: str) -> str:
+        if len(value) < 32:
+            raise ValueError("SESSION_SECRET must be at least 32 characters long")
+        return value
 
     @property
     def evaluation_weights(self) -> "EvaluationWeights":
