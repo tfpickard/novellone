@@ -354,13 +354,12 @@
             </button>
           {/if}
         </div>
-        <div class="tag-cloud-list" role="list">
+        <div class="tag-cloud-list">
           <button
             type="button"
             class={`tag-cloud-item all ${selectedGenre === 'all' ? 'active' : ''}`}
             style="--tag-weight: 1"
             aria-pressed={selectedGenre === 'all'}
-            role="listitem"
             on:click={() => (selectedGenre = 'all')}
           >
             <span class="tag-label">All tags</span>
@@ -371,7 +370,6 @@
               class={`tag-cloud-item ${selectedGenre === key ? 'active' : ''}`}
               style={`--tag-weight: ${weight}`}
               aria-pressed={selectedGenre === key}
-              role="listitem"
               on:click={() => toggleGenreFilter(key)}
             >
               <span class="tag-label">{label}</span>
@@ -425,6 +423,7 @@
                   {#if metric.best}
                     {@const trendBadge = getTrendBadge(metric, metric.best.trend_change)}
                     {@const sparkline = buildSparkline(metric.best.trend_samples)}
+                    {@const bestGenres = explodeGenreTags(metric.best.genre_tags)}
                     <article class={`story-card positive ${entryFilteredOut(metric.best) ? 'filtered' : ''}`}>
                       <span class="story-tag positive">Recommended</span>
                       <div class="story-overview">
@@ -451,7 +450,6 @@
                               <span>Updated {formatRelativeTime(metric.best.last_activity_at)}</span>
                             {/if}
                           </div>
-                          {@const bestGenres = explodeGenreTags(metric.best.genre_tags)}
                           {#if bestGenres.length}
                             <div class="story-genres">
                               {#each bestGenres as genre}
@@ -544,6 +542,7 @@
                   {#if metric.worst}
                     {@const trendBadge = getTrendBadge(metric, metric.worst.trend_change)}
                     {@const sparkline = buildSparkline(metric.worst.trend_samples)}
+                    {@const worstGenres = explodeGenreTags(metric.worst.genre_tags)}
                     <article class={`story-card negative ${entryFilteredOut(metric.worst) ? 'filtered' : ''}`}>
                       <span class="story-tag negative">Discouraged</span>
                       <div class="story-overview">
@@ -570,7 +569,6 @@
                               <span>Updated {formatRelativeTime(metric.worst.last_activity_at)}</span>
                             {/if}
                           </div>
-                          {@const worstGenres = explodeGenreTags(metric.worst.genre_tags)}
                           {#if worstGenres.length}
                             <div class="story-genres">
                               {#each worstGenres as genre}
