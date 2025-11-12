@@ -57,6 +57,31 @@ _COVER_AXIS_MOODS: dict[str, str] = {
     "supernatural_occult": "mystical wonder",
 }
 
+_PROMPT_SAFETY_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bsex(?:ual|y)?\b", re.IGNORECASE), "romantic"),
+    (re.compile(r"\berotic\b", re.IGNORECASE), "suggestive"),
+    (re.compile(r"\bnud(e|ity)\b", re.IGNORECASE), "artistic"),
+    (re.compile(r"\borgy\b", re.IGNORECASE), "gathering"),
+    (re.compile(r"\bporn(?:ographic|\b)", re.IGNORECASE), "explicit"),
+    (re.compile(r"\bblood(y)?\b", re.IGNORECASE), "intense"),
+    (re.compile(r"\bgore(y|\b)", re.IGNORECASE), "grim"),
+    (re.compile(r"\bmaim(?:ed|ing)?\b", re.IGNORECASE), "injure"),
+    (re.compile(r"\bkill(?:ed|ing)?\b", re.IGNORECASE), "defeat"),
+    (re.compile(r"\bmurder(?:er|ous|\b)", re.IGNORECASE), "villain"),
+    (re.compile(r"\bassassinat(?:e|ion)\b", re.IGNORECASE), "eliminate"),
+    (re.compile(r"\bdrugs?\b", re.IGNORECASE), "illicit trade"),
+    (re.compile(r"\bintoxicated\b", re.IGNORECASE), "dazed"),
+    (re.compile(r"\bheroin\b", re.IGNORECASE), "narcotic"),
+    (re.compile(r"\bcocaine\b", re.IGNORECASE), "stimulant"),
+    (re.compile(r"\bmeth(?:amphetamine)?\b", re.IGNORECASE), "chemical"),
+    (re.compile(r"\bgun(s|fire)?\b", re.IGNORECASE), "weapons"),
+    (re.compile(r"\bshot(s|gun)?\b", re.IGNORECASE), "blast"),
+    (re.compile(r"\bexplosion\b", re.IGNORECASE), "eruption"),
+    (re.compile(r"\bdecapitat(?:e|ion)\b", re.IGNORECASE), "defeat"),
+    (re.compile(r"\bcorpse\b", re.IGNORECASE), "figure"),
+    (re.compile(r"\bsuicide\b", re.IGNORECASE), "sacrifice"),
+)
+
 
 def _ordered_content_axes(extra_keys: Sequence[str] | None = None) -> list[str]:
     ordered = list(CONTENT_AXIS_KEYS)
@@ -188,6 +213,65 @@ def _momentum_short(momentum: float) -> str:
     if momentum < -0.05:
         return "softening"
     return "steady"
+
+
+def _sanitize_cover_prompt_text(text: str) -> str:
+    """Replace high-risk words with softer alternatives for image prompts."""
+
+    sanitized = text
+    for pattern, replacement in _PROMPT_SAFETY_REPLACEMENTS:
+        sanitized = pattern.sub(replacement, sanitized)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized
+
+
+async def _sanitize_cover_prompt_with_model(prompt: str) -> str:
+    """Ask gpt-5-nano to produce a policy-compliant cover prompt."""
+
+    try:
+        response = await _client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You rewrite book-cover image prompts so they are strictly PG-13,"
+                        " avoid explicit, graphic, or policy-sensitive language, and keep the"
+                        " request compliant with OpenAI's image safety rules. Return only the"
+                        " cleaned prompt text with no extra commentary."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Censor or soften the following image prompt so it fully complies with"
+                        " OpenAI's image generation policy while preserving safe creative"
+                        " intent. Respond with the revised prompt only.\n\n"
+                        f"PROMPT:\n{prompt}"
+                    ),
+                },
+            ],
+            max_completion_tokens=600,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("gpt-5-nano prompt sanitization failed")
+        return ""
+
+    if not getattr(response, "choices", None):
+        logger.warning("gpt-5-nano prompt sanitization returned no choices")
+        return ""
+
+    message = getattr(response.choices[0], "message", None)
+    content = ""
+    if message is not None:
+        content = getattr(message, "content", "") or ""
+        if not content and hasattr(message, "text"):
+            content = getattr(message, "text") or ""
+
+    sanitized = content.strip()
+    if not sanitized:
+        logger.warning("gpt-5-nano prompt sanitization produced empty content")
+    return sanitized
 
 
 def _intensity_descriptor(level: float) -> str:
@@ -1572,24 +1656,37 @@ async def generate_cover_image(
             content_settings,
         )
     axis_summary = _describe_cover_axes(sanitized_content_settings)
+    safe_title = _sanitize_cover_prompt_text(story_title)
+    safe_premise = _sanitize_cover_prompt_text(premise_summary)
+    safe_axis_summary = _sanitize_cover_prompt_text(axis_summary) if axis_summary else ""
     tone_clause = ""
     if axis_summary:
         tone_clause = (
             " Content tone cues (keep imagery tasteful, symbolic, and policy-compliant—no explicit depictions): "
-            f"{axis_summary}."
+            f"{safe_axis_summary}."
         )
 
-    prompt = (
-        f"Book cover art for a science fiction story titled '{story_title}'. "
-        f"Story premise: {premise_summary}. "
+    base_prompt = (
+        f"Book cover art for a science fiction story titled '{safe_title}'. "
+        f"Story premise: {safe_premise}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
         "Style: modern sci-fi book cover, professional, dramatic lighting. "
-        f"Render the title text '{story_title}' clearly within the artwork, integrating it into the scene with polished typography."
+        "Ensure the imagery stays PG-13: avoid nudity, explicit intimacy, graphic violence, or gore. "
+        f"Render the title text '{safe_title}' clearly within the artwork, integrating it into the scene with polished typography."
         f"{tone_clause}"
     )
 
     logger.info("Generating cover image for story: %s", story_title)
-    logger.debug("Cover image prompt length: %d chars", len(prompt))
+    logger.debug("Cover image prompt length: %d chars", len(base_prompt))
+
+    prompt = await _sanitize_cover_prompt_with_model(base_prompt)
+    if not prompt:
+        prompt = base_prompt
+        logger.warning(
+            "Cover prompt sanitization via gpt-5-nano returned empty output; falling back to base prompt."
+        )
+
+    logger.debug("Sanitized cover image prompt length: %d chars", len(prompt))
 
     try:
         response = await _client.images.generate(
