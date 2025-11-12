@@ -25,21 +25,24 @@
   const explodeGenreTag = (value: string) => {
     const normalized = normalizeGenreLabel(value);
     if (!normalized) return [] as string[];
-    const separators = /[,;:\/•·|&]+/;
+    const separators = /[,;:\/•·|&+]+/;
+    const connectorBreaks = /\b(?:and|with|featuring|versus|vs\.?|against|plus)\b/gi;
     const dashSplit = normalized.split(/\s*[–—]\s*|\s+-\s+/);
     const segments = dashSplit
+      .map((segment) => segment.replace(connectorBreaks, ','))
       .map((segment) => segment.split(separators))
       .flat()
       .map((segment) => cleanGenreSegment(segment))
       .filter(Boolean);
     return segments.length > 0 ? segments : [normalized];
   };
-  const explodeGenreTags = (values: string[] | null | undefined) => {
+  const explodeGenreTags = (values: string[] | string | null | undefined) => {
     if (!values) return [] as string[];
+    const source = Array.isArray(values) ? values : [values];
     const tags: string[] = [];
     const seen = new Set<string>();
     const keyFor = (value: string) => normalizeGenreLabel(value).toLowerCase();
-    for (const value of values) {
+    for (const value of source) {
       if (!value) continue;
       for (const segment of explodeGenreTag(value)) {
         if (!segment) continue;
