@@ -231,7 +231,6 @@ async def _sanitize_cover_prompt_with_model(prompt: str) -> str:
     try:
         response = await _client.chat.completions.create(
             model="gpt-5-nano",
-            temperature=0.0,
             messages=[
                 {
                     "role": "system",
