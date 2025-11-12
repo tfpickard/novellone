@@ -13,25 +13,107 @@
     [metric.best, metric.worst].filter(Boolean) as MetricEntry[]
   );
 
-  const availableStatuses = Array.from(new Set(allEntries.map((entry) => entry.status))).sort();
-  const availableGenres = Array.from(
-    new Set(
-      allEntries.flatMap((entry) => {
-        if (!entry.genre_tags) return [];
-        return entry.genre_tags;
-      })
-    )
-  ).sort();
+  const formatStatus = (status: string) =>
+    status ? status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : '';
 
-  let selectedStatus = 'all';
-  let selectedGenre = 'all';
+  const normalizeGenreLabel = (value: string) =>
+    value
+      .replace(/&amp;/gi, '&')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const stripMarkup = (value: string) => value.replace(/\[[^\]]*\]/g, ' ').replace(/<[^>]*>/g, ' ');
+  const cleanGenreSegment = (value: string) =>
+    normalizeGenreLabel(value)
+      .replace(/^['"‘’“”]+|['"‘’“”]+$/g, '')
+      .replace(/^\((.*)\)$/g, '$1')
+      .replace(/^(?:and|with|featuring|versus|vs\.?|against|plus|or|x|x's)\s+/i, '')
+      .replace(/^(?:a|an|the)\s+/i, '')
+      .replace(/[()]+$/g, '')
+      .replace(/^[()]+/g, '')
+      .replace(/[.!?]+$/, '');
+  const explodeGenreTag = (value: string) => {
+    const normalized = normalizeGenreLabel(stripMarkup(value));
+    if (!normalized) return [] as string[];
+    const separators = /[,;:\/•·|&+]+/;
+    const connectorBreaks = /\b(?:and\/or|and|with|featuring|versus|vs\.?|against|plus|or|x|x's)\b/gi;
+    const dashSplit = normalized
+      .replace(/[\r\n]+/g, ',')
+      .replace(/\(([^)]+)\)/g, (_, inner: string) => `,${inner},`)
+      .split(/\s*[–—]\s*|\s+-\s+/);
+    const segments = dashSplit
+      .map((segment) => segment.replace(connectorBreaks, ','))
+      .map((segment) => segment.split(separators))
+      .flat()
+      .map((segment) => cleanGenreSegment(segment))
+      .filter(Boolean);
+    return segments.length > 0 ? segments : [normalized];
+  };
+  const explodeGenreTags = (values: string[] | string | null | undefined) => {
+    if (!values) return [] as string[];
+    const source = Array.isArray(values) ? values : [values];
+    const tags: string[] = [];
+    const seen = new Set<string>();
+    const keyFor = (value: string) => normalizeGenreLabel(value).toLowerCase();
+    for (const value of source) {
+      if (!value) continue;
+      for (const segment of explodeGenreTag(value)) {
+        if (!segment) continue;
+        const key = keyFor(segment);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        tags.push(segment);
+      }
+    }
+    return tags;
+  };
+  const genreKey = (value: string) => normalizeGenreLabel(value).toLowerCase();
+
+  const availableStatuses = Array.from(new Set(allEntries.map((entry) => entry.status))).sort();
+
+  const genreAggregates = new Map<string, { label: string; count: number }>();
+  for (const entry of allEntries) {
+    for (const tag of explodeGenreTags(entry.genre_tags)) {
+      if (!tag) continue;
+      const label = normalizeGenreLabel(tag);
+      if (!label) continue;
+      const key = genreKey(label);
+      const aggregate = genreAggregates.get(key);
+      if (aggregate) {
+        aggregate.count += 1;
+      } else {
+        genreAggregates.set(key, { label, count: 1 });
+      }
+    }
+  }
+
+  const genreCloudBase = Array.from(genreAggregates.entries()).map(([key, { label, count }]) => ({
+    key,
+    label,
+    count
+  }));
+
+  genreCloudBase.sort((a, b) => {
+    if (a.count !== b.count) {
+      return b.count - a.count;
+    }
+    return a.label.localeCompare(b.label);
+  });
+
+  const maxGenreCount = genreCloudBase.reduce((max, { count }) => Math.max(max, count), 0) || 1;
+
+  const genreCloud = genreCloudBase.map(({ key, label, count }) => ({
+    key,
+    label,
+    count,
+    weight: 0.85 + (count / maxGenreCount) * 0.75
+  }));
+
+  let selectedStatus: string = 'all';
+  let selectedGenre: string = 'all';
   let showPriorityOnly = false;
 
   let queueing: Record<string, boolean> = {};
   let queueFeedback: Record<string, { type: 'success' | 'error'; message: string } | null> = {};
-
-  const formatStatus = (status: string) =>
-    status ? status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : '';
 
   const formatValue = (metric: Metric, entry: MetricEntry | null) => {
     if (!entry || entry.value === null || entry.value === undefined) {
@@ -103,7 +185,7 @@
       return false;
     }
     if (selectedGenre !== 'all') {
-      const genres = entry.genre_tags ?? [];
+      const genres = explodeGenreTags(entry.genre_tags).map((genre) => genreKey(genre));
       if (!genres.includes(selectedGenre)) {
         return false;
       }
@@ -210,7 +292,15 @@
 
   const statusLabel = (value: string) => (value === 'all' ? 'All statuses' : formatStatus(value));
 
-  const genreLabel = (value: string) => (value === 'all' ? 'All genres' : value);
+  $: selectedGenreLabel =
+    selectedGenre === 'all'
+      ? null
+      : genreCloud.find((entry) => entry.key === selectedGenre)?.label ?? null;
+
+  const toggleGenreFilter = (genre: string) => {
+    const key = genreKey(genre);
+    selectedGenre = selectedGenre === key ? 'all' : key;
+  };
 
   $: filteredSections = groupedEntries
     .map((section) => ({
@@ -252,23 +342,55 @@
             {/each}
           </select>
         </label>
-        {#if availableGenres.length > 0}
-          <label>
-            <span>Genre</span>
-            <select bind:value={selectedGenre}>
-              <option value="all">{genreLabel('all')}</option>
-              {#each availableGenres as genre}
-                <option value={genre}>{genreLabel(genre)}</option>
-              {/each}
-            </select>
-          </label>
-        {/if}
       </div>
       <label class="toggle">
         <input type="checkbox" bind:checked={showPriorityOnly} />
         <span>Show only priority metrics</span>
       </label>
     </section>
+
+    {#if genreCloud.length > 0}
+      <section class="tag-cloud" aria-label="Browse stories by tag">
+        <div class="tag-cloud-header">
+          <div class="tag-cloud-title">
+            <h2>Browse by tag</h2>
+            {#if selectedGenreLabel}
+              <span class="active-tag-label" aria-live="polite">
+                Showing stories tagged <strong>{selectedGenreLabel}</strong>
+              </span>
+            {/if}
+          </div>
+          {#if selectedGenre !== 'all'}
+            <button type="button" class="clear-tags" on:click={() => (selectedGenre = 'all')}>
+              Clear tag filter
+            </button>
+          {/if}
+        </div>
+        <div class="tag-cloud-list">
+          <button
+            type="button"
+            class={`tag-cloud-item all ${selectedGenre === 'all' ? 'active' : ''}`}
+            style="--tag-weight: 1"
+            aria-pressed={selectedGenre === 'all'}
+            on:click={() => (selectedGenre = 'all')}
+          >
+            <span class="tag-label">All tags</span>
+          </button>
+          {#each genreCloud as { key, label, count, weight }}
+            <button
+              type="button"
+              class={`tag-cloud-item ${selectedGenre === key ? 'active' : ''}`}
+              style={`--tag-weight: ${weight}`}
+              aria-pressed={selectedGenre === key}
+              on:click={() => toggleGenreFilter(key)}
+            >
+              <span class="tag-label">{label}</span>
+              <span class="tag-count">{count}</span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
 
     {#if !hasFilteredMetrics}
       <section class="empty-state">
@@ -313,6 +435,7 @@
                   {#if metric.best}
                     {@const trendBadge = getTrendBadge(metric, metric.best.trend_change)}
                     {@const sparkline = buildSparkline(metric.best.trend_samples)}
+                    {@const bestGenres = explodeGenreTags(metric.best.genre_tags)}
                     <article class={`story-card positive ${entryFilteredOut(metric.best) ? 'filtered' : ''}`}>
                       <span class="story-tag positive">Recommended</span>
                       <div class="story-overview">
@@ -339,10 +462,22 @@
                               <span>Updated {formatRelativeTime(metric.best.last_activity_at)}</span>
                             {/if}
                           </div>
-                          {#if metric.best.genre_tags?.length}
+                          {#if bestGenres.length}
                             <div class="story-genres">
-                              {#each metric.best.genre_tags as genre}
-                                <span>{genre}</span>
+                              {#each bestGenres as genre}
+                                {@const label = normalizeGenreLabel(genre)}
+                                {@const key = genreKey(genre)}
+                                {#if label}
+                                  <button
+                                    type="button"
+                                    class={`story-genre ${selectedGenre === key ? 'active' : ''}`}
+                                    aria-pressed={selectedGenre === key}
+                                    on:click={() => toggleGenreFilter(label)}
+                                    title={`Show stories tagged ${label}`}
+                                  >
+                                    {label}
+                                  </button>
+                                {/if}
                               {/each}
                             </div>
                           {/if}
@@ -419,6 +554,7 @@
                   {#if metric.worst}
                     {@const trendBadge = getTrendBadge(metric, metric.worst.trend_change)}
                     {@const sparkline = buildSparkline(metric.worst.trend_samples)}
+                    {@const worstGenres = explodeGenreTags(metric.worst.genre_tags)}
                     <article class={`story-card negative ${entryFilteredOut(metric.worst) ? 'filtered' : ''}`}>
                       <span class="story-tag negative">Discouraged</span>
                       <div class="story-overview">
@@ -445,10 +581,22 @@
                               <span>Updated {formatRelativeTime(metric.worst.last_activity_at)}</span>
                             {/if}
                           </div>
-                          {#if metric.worst.genre_tags?.length}
+                          {#if worstGenres.length}
                             <div class="story-genres">
-                              {#each metric.worst.genre_tags as genre}
-                                <span>{genre}</span>
+                              {#each worstGenres as genre}
+                                {@const label = normalizeGenreLabel(genre)}
+                                {@const key = genreKey(genre)}
+                                {#if label}
+                                  <button
+                                    type="button"
+                                    class={`story-genre ${selectedGenre === key ? 'active' : ''}`}
+                                    aria-pressed={selectedGenre === key}
+                                    on:click={() => toggleGenreFilter(label)}
+                                    title={`Show stories tagged ${label}`}
+                                  >
+                                    {label}
+                                  </button>
+                                {/if}
                               {/each}
                             </div>
                           {/if}
@@ -570,6 +718,107 @@
     border-radius: 18px;
     background: rgba(15, 23, 42, 0.6);
     border: 1px solid rgba(148, 163, 184, 0.18);
+  }
+
+  .tag-cloud {
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .tag-cloud-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .tag-cloud-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .tag-cloud-title h2 {
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(226, 232, 240, 0.85);
+  }
+
+  .active-tag-label {
+    font-size: 0.85rem;
+    color: rgba(148, 163, 184, 0.85);
+  }
+
+  .active-tag-label strong {
+    color: #f8fafc;
+  }
+
+  .clear-tags {
+    border: none;
+    background: rgba(148, 163, 184, 0.12);
+    color: #f8fafc;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .clear-tags:hover {
+    background: rgba(59, 130, 246, 0.3);
+    color: #e0f2fe;
+  }
+
+  .tag-cloud-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .tag-cloud-item {
+    border: none;
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(59, 130, 246, 0.14);
+    color: #bfdbfe;
+    cursor: pointer;
+    font-size: calc(0.85rem * var(--tag-weight));
+    line-height: 1;
+    transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+  }
+
+  .tag-cloud-item.all {
+    background: rgba(148, 163, 184, 0.16);
+    color: rgba(226, 232, 240, 0.9);
+  }
+
+  .tag-cloud-item .tag-count {
+    font-size: 0.7em;
+    opacity: 0.7;
+  }
+
+  .tag-cloud-item:hover,
+  .tag-cloud-item:focus-visible {
+    transform: translateY(-2px);
+    background: rgba(59, 130, 246, 0.28);
+    color: #e0f2fe;
+  }
+
+  .tag-cloud-item.active {
+    background: rgba(56, 189, 248, 0.4);
+    color: #f8fafc;
+    box-shadow: 0 8px 18px rgba(14, 165, 233, 0.25);
   }
 
   .control-group {
@@ -868,13 +1117,29 @@
     gap: 0.3rem;
   }
 
-  .story-genres span {
+  .story-genres .story-genre {
     padding: 0.2rem 0.5rem;
     border-radius: 999px;
     background: rgba(59, 130, 246, 0.12);
     color: #93c5fd;
     font-size: 0.75rem;
     letter-spacing: 0.05em;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  }
+
+  .story-genres .story-genre:hover,
+  .story-genres .story-genre:focus-visible {
+    background: rgba(59, 130, 246, 0.25);
+    color: #e0f2fe;
+    transform: translateY(-1px);
+  }
+
+  .story-genres .story-genre.active {
+    background: rgba(14, 165, 233, 0.35);
+    color: #f8fafc;
+    box-shadow: 0 6px 14px rgba(14, 165, 233, 0.25);
   }
 
   .story-context {
