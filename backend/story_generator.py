@@ -225,6 +225,56 @@ def _sanitize_cover_prompt_text(text: str) -> str:
     return sanitized
 
 
+async def _sanitize_cover_prompt_with_model(prompt: str) -> str:
+    """Ask gpt-5-nano to produce a policy-compliant cover prompt."""
+
+    try:
+        response = await _client.chat.completions.create(
+            model="gpt-5-nano",
+            temperature=0.0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You rewrite book-cover image prompts so they are strictly PG-13,"
+                        " avoid explicit, graphic, or policy-sensitive language, and keep the"
+                        " request compliant with OpenAI's image safety rules. Return only the"
+                        " cleaned prompt text with no extra commentary."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Censor or soften the following image prompt so it fully complies with"
+                        " OpenAI's image generation policy while preserving safe creative"
+                        " intent. Respond with the revised prompt only.\n\n"
+                        f"PROMPT:\n{prompt}"
+                    ),
+                },
+            ],
+            max_tokens=600,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("gpt-5-nano prompt sanitization failed")
+        return ""
+
+    if not getattr(response, "choices", None):
+        logger.warning("gpt-5-nano prompt sanitization returned no choices")
+        return ""
+
+    message = getattr(response.choices[0], "message", None)
+    content = ""
+    if message is not None:
+        content = getattr(message, "content", "") or ""
+        if not content and hasattr(message, "text"):
+            content = getattr(message, "text") or ""
+
+    sanitized = content.strip()
+    if not sanitized:
+        logger.warning("gpt-5-nano prompt sanitization produced empty content")
+    return sanitized
+
+
 def _intensity_descriptor(level: float) -> str:
     if level >= 8.5:
         return "extreme"
@@ -1617,7 +1667,7 @@ async def generate_cover_image(
             f"{safe_axis_summary}."
         )
 
-    prompt = (
+    base_prompt = (
         f"Book cover art for a science fiction story titled '{safe_title}'. "
         f"Story premise: {safe_premise}. "
         "Create a striking, atmospheric cover image with a cinematic composition. "
@@ -1628,7 +1678,16 @@ async def generate_cover_image(
     )
 
     logger.info("Generating cover image for story: %s", story_title)
-    logger.debug("Cover image prompt length: %d chars", len(prompt))
+    logger.debug("Cover image prompt length: %d chars", len(base_prompt))
+
+    prompt = await _sanitize_cover_prompt_with_model(base_prompt)
+    if not prompt:
+        prompt = base_prompt
+        logger.warning(
+            "Cover prompt sanitization via gpt-5-nano returned empty output; falling back to base prompt."
+        )
+
+    logger.debug("Sanitized cover image prompt length: %d chars", len(prompt))
 
     try:
         response = await _client.images.generate(
