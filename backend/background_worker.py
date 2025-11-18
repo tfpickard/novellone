@@ -75,7 +75,14 @@ class BackgroundWorker:
             try:
                 await self._run_cycle()
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Background cycle failed: %s", exc)
+                # Disable Rich markup for exception messages so that user-provided
+                # text (e.g. "[/CHANT]") doesn't get parsed as Rich markup tags
+                # and break logging output.
+                logger.exception(
+                    "Background cycle failed: %s",
+                    exc,
+                    extra={"markup": False},
+                )
             finally:
                 duration_ms = (time.perf_counter() - tick_start) * 1000
                 logger.debug("Background tick finished in %.2f ms", duration_ms)
