@@ -25,6 +25,7 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 
 _PROMPT_STATE_KEY = "premise_prompt_state"
 _MAX_DYNAMIC_DIRECTIVES = 4
+_SUMMARY_MODEL = "gpt-5-nano"
 
 _HURLLOL_LEXICON: dict[str, tuple[str, ...]] = {
     "H": (
@@ -990,6 +991,67 @@ async def generate_story_theme(premise: str, title: str) -> dict[str, Any]:
     }
 
 
+async def generate_story_summary(story: Story, chapters: Sequence[Chapter]) -> str:
+    if not chapters:
+        return ""
+
+    excerpts: list[str] = []
+    for chapter in chapters:
+        excerpt = chapter.content.strip()
+        if len(excerpt) > 1500:
+            excerpt = excerpt[:1500].rstrip() + "…"
+        excerpts.append(f"Chapter {chapter.chapter_number}: {excerpt}")
+
+    context_block = "\n\n".join(excerpts)
+    prompt = (
+        f"Title: {story.title}\n"
+        f"Premise: {story.premise}\n\n"
+        "Write a concise recap of the story so far using the chapter excerpts below."
+        " Summarise major arcs, conflicts, and character developments in 3-4 sentences."
+        " Mention Tom the engineer if relevant. Keep it factual and avoid spoilers beyond the provided chapters.\n\n"
+        f"Chapter excerpts:\n{context_block}"
+    )
+
+    model_lower = _SUMMARY_MODEL.lower()
+    is_reasoning_model = any(x in model_lower for x in ["o1", "gpt-5", "reasoning"])
+    is_gpt5_model = "gpt-5" in model_lower
+
+    request_params: dict[str, Any] = {
+        "model": _SUMMARY_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a precise story analyst who writes spoiler-free recaps.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    max_tokens = 400
+    if is_reasoning_model:
+        request_params["max_completion_tokens"] = min(max_tokens * 2, 4000)
+    else:
+        request_params["max_tokens"] = max_tokens
+
+    if not is_reasoning_model and not is_gpt5_model:
+        request_params["temperature"] = 0.2
+
+    try:
+        response = await _client.chat.completions.create(**request_params)
+    except OpenAIError as exc:
+        logger.exception("Failed to generate story summary for %s: %s", story.title, exc)
+        return ""
+
+    if not response.choices:
+        logger.warning("Summary response returned no choices for story %s", story.title)
+        return ""
+
+    message = response.choices[0].message
+    content = getattr(message, "content", None) or getattr(message, "text", "")
+    summary = content.strip() if isinstance(content, str) else str(content).strip()
+    return summary
+
+
 _TERMINATING_PUNCTUATION = {".", "!", "?", "…"}
 _CLOSING_PUNCTUATION = {"'", '"', "”", "’", "]", ")", "»"}
 
@@ -1072,6 +1134,9 @@ async def generate_chapter(
     recent_chapters: Sequence[Chapter],
     *,
     chapter_number: int,
+    story_summary: str | None = None,
+    finale: bool = False,
+    completion_reason: str | None = None,
 ) -> dict[str, Any]:
     # Calculate expected chaos parameters for this chapter
     expected_absurdity = story.absurdity_initial + (chapter_number - 1) * story.absurdity_increment
@@ -1093,6 +1158,13 @@ async def generate_chapter(
         for chapter in recent_chapters
     )
 
+    summary_section = ""
+    if story_summary:
+        summary_section = (
+            "Continuity summary (keep this consistent even if older events fall outside the chapter context):\n"
+            f"{story_summary}\n\n"
+        )
+
     # Build style instruction if authors are specified
     style_instruction = ""
     if story.style_authors and len(story.style_authors) > 0:
@@ -1109,15 +1181,26 @@ async def generate_chapter(
     if story.tone:
         metadata_guidance += f"Tone: {story.tone}\n"
 
+    finale_instruction = ""
+    if finale:
+        finale_instruction = (
+            "\nThis chapter is the story conclusion. Resolve central conflicts, pay off the premise,"
+            " and leave readers with a sense of completion while honouring lingering mysteries."
+        )
+        if completion_reason:
+            finale_instruction += f" The story is ending because: {completion_reason}."
+
     prompt = (
         f"Story: {story.title}\n"
         f"Premise: {story.premise}\n"
+        f"{summary_section}"
         f"Previous chapters: {context or 'None yet.'}\n"
         f"{style_instruction}"
         f"{metadata_guidance}\n"
         f"Write Chapter {chapter_number}. Continue naturally, develop characters/plot, introduce complications.\n"
         "Aim for 600-900 words and ensure the chapter forms a coherent arc with a beginning, middle, and end."
-        " Do not end mid-sentence; conclude with a strong beat or hook.\n\n"
+        " Do not end mid-sentence; conclude with a strong beat or hook."
+        f"{finale_instruction}\n\n"
         f"CHAOS PARAMETERS for this chapter (scale 0.0-1.0):\n"
         f"- Absurdity: {expected_absurdity:.3f} (logical inconsistencies, bizarre situations)\n"
         f"- Surrealism: {expected_surrealism:.3f} (dreamlike, symbolic, reality-bending elements)\n"
@@ -1298,6 +1381,7 @@ async def spawn_new_story(config: RuntimeConfig) -> dict[str, Any]:
 __all__ = [
     "generate_story_premise",
     "generate_story_theme",
+    "generate_story_summary",
     "generate_chapter",
     "generate_cover_image",
     "spawn_new_story",

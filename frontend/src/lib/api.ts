@@ -77,6 +77,8 @@ export type RuntimeConfig = {
   min_active_stories: number;
   max_active_stories: number;
   context_window_chapters: number;
+  summary_refresh_interval_chapters: number;
+  summary_context_chapters: number;
   openai_model: string;
   openai_premise_model: string;
   openai_eval_model: string;

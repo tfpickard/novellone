@@ -86,6 +86,18 @@
     return `${plain.slice(0, limit - 1).trimEnd()}…`;
   }
 
+  const formatQualityScore = (value: number | null | undefined): string => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+    return `${Math.round(value * 100)}%`;
+  };
+
+  const qualityLevelClass = (value: number | null | undefined): string => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return 'quality-none';
+    if (value >= 0.75) return 'quality-high';
+    if (value >= 0.55) return 'quality-mid';
+    return 'quality-low';
+  };
+
   function sortComparator(a: StorySummary, b: StorySummary): number {
     switch (sortMode) {
       case 'oldest':
@@ -333,6 +345,18 @@
               {#if story.theme_json?.mood}
                 <span class="badge">{story.theme_json.mood}</span>
               {/if}
+            </div>
+            <div
+              class={`quality-indicator ${qualityLevelClass(story.aggregate_quality_score)}`}
+              aria-label="Aggregate quality score"
+            >
+              <span class="quality-label">Quality</span>
+              <div class="quality-value">
+                <strong>{formatQualityScore(story.aggregate_quality_score)}</strong>
+                {#if story.quality_score_samples}
+                  <span>{story.quality_score_samples} evals</span>
+                {/if}
+              </div>
             </div>
             <p class="premise">{preview(story.premise)}</p>
             <footer>
@@ -709,6 +733,61 @@
     font-size: 0.75rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+  }
+
+  .quality-indicator {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.35);
+    gap: 0.5rem;
+  }
+
+  .quality-indicator .quality-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.8;
+  }
+
+  .quality-indicator .quality-value {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+
+  .quality-indicator .quality-value strong {
+    font-size: 1.1rem;
+  }
+
+  .quality-indicator .quality-value span {
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .quality-indicator.quality-high {
+    border-color: rgba(34, 197, 94, 0.6);
+    background: rgba(34, 197, 94, 0.12);
+    color: #bbf7d0;
+  }
+
+  .quality-indicator.quality-mid {
+    border-color: rgba(234, 179, 8, 0.5);
+    background: rgba(234, 179, 8, 0.12);
+    color: #fef3c7;
+  }
+
+  .quality-indicator.quality-low {
+    border-color: rgba(248, 113, 113, 0.45);
+    background: rgba(248, 113, 113, 0.12);
+    color: #fecaca;
+  }
+
+  .quality-indicator.quality-none {
+    opacity: 0.75;
   }
 
   .premise {

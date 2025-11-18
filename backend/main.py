@@ -87,6 +87,7 @@ class ChapterRead(BaseModel):
     chapter_number: int
     content: str
     created_at: datetime
+    content_levels: dict[str, Any] = Field(default_factory=dict)
     tokens_used: int | None = None
     generation_time_ms: int | None = None
     model_used: str | None = None
@@ -105,6 +106,7 @@ class ChapterRead(BaseModel):
             chapter_number=chapter.chapter_number,
             content=chapter.content,
             created_at=chapter.created_at,
+            content_levels=chapter.content_levels or {},
             tokens_used=chapter.tokens_used,
             generation_time_ms=chapter.generation_time_ms,
             model_used=chapter.model_used,
@@ -324,6 +326,11 @@ class StorySummary(BaseModel):
     insanity_increment: float = 0.05
     aggregate_stats: dict[str, Any] | None = None
     universe: StoryUniverseContext | None = None
+    context_summary: str | None = None
+    context_summary_updated_at: datetime | None = None
+    context_summary_chapter: int | None = None
+    aggregate_quality_score: float | None = None
+    quality_score_samples: int | None = None
 
     @classmethod
     def from_model(
@@ -369,6 +376,11 @@ class StorySummary(BaseModel):
             insanity_increment=story.insanity_increment,
             aggregate_stats=aggregate_stats,
             universe=universe,
+            context_summary=story.context_summary,
+            context_summary_updated_at=story.context_summary_updated_at,
+            context_summary_chapter=story.context_summary_chapter,
+            aggregate_quality_score=story.quality_score_average,
+            quality_score_samples=story.quality_score_samples,
         )
 
 
@@ -683,36 +695,9 @@ async def kill_story(
 
     reason = (payload.reason or "Terminated manually").strip() or "Terminated manually"
     if story.status != "completed":
-        story.status = "completed"
-        story.completed_at = datetime.utcnow()
-        story.completion_reason = reason
-        
-        # Generate cover image for the completed story (only if we don't have one)
-        if not story.cover_image_url:
-            logger.info("Generating cover image for manually killed story: %s", story.title)
-            try:
-                cover_url = await generate_cover_image(story.title, story.premise)
-                if cover_url:
-                    story.cover_image_url = cover_url
-                    logger.info("✓ Cover image saved for manually killed story %s", story.title)
-                else:
-                    logger.warning("✗ No cover image URL returned for story %s", story.title)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Failed to generate cover image for story %s: %s", story.title, exc)
-        else:
-            logger.debug("Story %s already has cover image, skipping generation", story.title)
-        
+        runtime_config = await get_runtime_config(session)
+        await worker.finalize_story(session, story, reason, runtime_config)
         await session.commit()
-
-        if settings.enable_websocket:
-            await ws_manager.broadcast(
-                {
-                    "type": "story_completed",
-                    "story_id": str(story.id),
-                    "reason": reason,
-                    "cover_image_url": story.cover_image_url,
-                }
-            )
         logger.info("Story %s killed manually: %s", story.title, reason)
     else:
         if story.completion_reason != reason:

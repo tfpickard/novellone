@@ -19,6 +19,8 @@ class RuntimeConfig:
     min_active_stories: int
     max_active_stories: int
     context_window_chapters: int
+    summary_refresh_interval_chapters: int
+    summary_context_chapters: int
     openai_model: str
     openai_premise_model: str
     openai_eval_model: str
@@ -42,6 +44,8 @@ class RuntimeConfig:
             "min_active_stories": self.min_active_stories,
             "max_active_stories": self.max_active_stories,
             "context_window_chapters": self.context_window_chapters,
+            "summary_refresh_interval_chapters": self.summary_refresh_interval_chapters,
+            "summary_context_chapters": self.summary_context_chapters,
             "openai_model": self.openai_model,
             "openai_premise_model": self.openai_premise_model,
             "openai_eval_model": self.openai_eval_model,
@@ -68,6 +72,8 @@ _CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
     "min_active_stories": {"type": int, "min": 0, "max": 100},
     "max_active_stories": {"type": int, "min": 1, "max": 200},
     "context_window_chapters": {"type": int, "min": 1, "max": 50},
+    "summary_refresh_interval_chapters": {"type": int, "min": 1, "max": 50},
+    "summary_context_chapters": {"type": int, "min": 1, "max": 50},
     "openai_model": {"type": str, "min_length": 1, "max_length": 128},
     "openai_premise_model": {"type": str, "min_length": 1, "max_length": 128},
     "openai_eval_model": {"type": str, "min_length": 1, "max_length": 128},
