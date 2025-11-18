@@ -385,298 +385,7 @@
         {/if}
       </div>
     </div>
-    <div class="side-panel">
-      <aside class="meta">
-        <div>
-          <span>Chapters</span>
-          <strong>{story.chapter_count}</strong>
-        </div>
-        <div>
-          <span>Status</span>
-          <strong>{story.status}</strong>
-        </div>
-        <div>
-          <span>Tokens</span>
-          <strong>{story.total_tokens ?? 0}</strong>
-        </div>
-        {#if story.estimated_reading_time_minutes}
-          <div>
-            <span>Reading Time</span>
-            <strong>{story.estimated_reading_time_minutes} min</strong>
-          </div>
-        {/if}
-        {#if story.aggregate_stats}
-          <div>
-            <span>Total Words</span>
-            <strong>{story.aggregate_stats.total_word_count.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Avg Words/Ch</span>
-            <strong>{story.aggregate_stats.avg_words_per_chapter.toFixed(0)}</strong>
-          </div>
-          <div>
-            <span>Avg Word Length</span>
-            <strong>{story.aggregate_stats.avg_word_length.toFixed(1)} chars</strong>
-          </div>
-          <div>
-            <span>Lexical Diversity</span>
-            <strong>{(story.aggregate_stats.overall_lexical_diversity * 100).toFixed(1)}%</strong>
-          </div>
-        {/if}
-      </aside>
-
-      {#if hasUniverseContext(universe)}
-        <aside class="universe-panel">
-          <h3>Shared Universe</h3>
-          {#if universe?.cluster_id}
-            <div class="universe-cluster">
-              <div class="cluster-label">{universe?.cluster_label ?? 'Continuity Cluster'}</div>
-              <div class="cluster-meta">
-                <span><strong>{universe?.cluster_size ?? 0}</strong> stories linked</span>
-                <span>Cohesion <strong>{formatCohesion(universe?.cohesion)}</strong></span>
-              </div>
-            </div>
-          {/if}
-
-          {#if universe?.related_stories?.length}
-            <div class="related-block">
-              <h4>Intersecting Stories</h4>
-              <ul>
-                {#each universe.related_stories as related}
-                  <li>
-                    <a href={`/story/${related.story_id}`}>
-                      <div class="related-heading">
-                        <strong>{related.title || 'Untitled Story'}</strong>
-                        <span class="related-weight">Affinity {formatCohesion(related.weight)}</span>
-                      </div>
-                      {#if related.shared_entities?.length}
-                        <div class="shared-row">
-                          <span class="shared-label">Characters</span>
-                          <div class="shared-chips">
-                            {#each related.shared_entities.slice(0, 4) as entity}
-                              <span class="chip">{entity}</span>
-                            {/each}
-                            {#if related.shared_entities.length > 4}
-                              <span class="chip more">+{related.shared_entities.length - 4}</span>
-                            {/if}
-                          </div>
-                        </div>
-                      {/if}
-                      {#if related.shared_themes?.length}
-                        <div class="shared-row">
-                          <span class="shared-label">Motifs</span>
-                          <div class="shared-chips">
-                            {#each related.shared_themes.slice(0, 4) as theme}
-                              <span class="chip">{theme}</span>
-                            {/each}
-                            {#if related.shared_themes.length > 4}
-                              <span class="chip more">+{related.shared_themes.length - 4}</span>
-                            {/if}
-                          </div>
-                        </div>
-                      {/if}
-                    </a>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {:else if universe?.cluster_id}
-            <p class="universe-empty">This story shares a continuity thread, but no direct crossovers have surfaced yet.</p>
-          {/if}
-
-          <div class="override-block">
-            <h4>Manual Corrections</h4>
-            {#if isAuthenticated}
-              <form class="override-form" on:submit|preventDefault={submitOverride}>
-                <div class="field">
-                  <label for="override-name">Entity Name</label>
-                  <input
-                    id="override-name"
-                    type="text"
-                    bind:value={overrideName}
-                    placeholder="e.g. Captain Voss"
-                    required
-                  />
-                </div>
-                <div class="field">
-                  <label for="override-action">Action</label>
-                  <select id="override-action" bind:value={overrideAction}>
-                    <option value="suppress">Suppress</option>
-                    <option value="merge">Merge Alias</option>
-                  </select>
-                </div>
-                {#if overrideAction === 'merge'}
-                  <div class="field">
-                    <label for="override-target">Merge Into</label>
-                    <input
-                      id="override-target"
-                      type="text"
-                      bind:value={overrideTarget}
-                      placeholder="Canonical name"
-                      required
-                    />
-                  </div>
-                {/if}
-                <div class="field">
-                  <label for="override-scope">Scope</label>
-                  <select id="override-scope" bind:value={overrideScope}>
-                    <option value="story">This Story</option>
-                    <option value="global">All Stories</option>
-                  </select>
-                </div>
-                <div class="field notes">
-                  <label for="override-notes">Notes</label>
-                  <textarea
-                    id="override-notes"
-                    bind:value={overrideNotes}
-                    rows="1"
-                    placeholder="Optional context or reasoning"
-                  ></textarea>
-                </div>
-                <div class="field action">
-                  <button type="submit" class="override-submit" disabled={overrideSaving}>
-                    {overrideSaving ? 'Saving…' : 'Save Override'}
-                  </button>
-                </div>
-              </form>
-            {:else}
-              <p class="override-info-text">Sign in to manage manual overrides.</p>
-            {/if}
-            {#if overrideError}
-              <p class="override-error">{overrideError}</p>
-            {/if}
-
-            {#if overrides.length}
-              <ul class="override-list">
-                {#each overrides as item (item.id)}
-                  <li class="override-item">
-                    <div class="override-info">
-                      <div class="override-heading">
-                        <span class={`scope-badge ${item.scope}`}>
-                          {item.scope === 'global' ? 'Global' : 'Story'}
-                        </span>
-                        <strong>{item.name}</strong>
-                        <span class="override-action">{item.action}</span>
-                        {#if item.action === 'merge' && item.target_name}
-                          <span class="merge-target">→ {item.target_name}</span>
-                        {/if}
-                      </div>
-                      {#if item.notes}
-                        <p class="override-notes">{item.notes}</p>
-                      {/if}
-                      <div class="override-meta">
-                        Updated {formatTimestamp(item.updated_at)}
-                      </div>
-                    </div>
-                    {#if isAuthenticated}
-                      <button
-                        class="override-remove"
-                        on:click|preventDefault={() => removeOverride(item.id)}
-                        disabled={removingOverrides[item.id]}
-                      >
-                        {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
-                      </button>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {:else}
-              <p class="universe-empty">No manual overrides for this story yet.</p>
-            {/if}
-          </div>
-        </aside>
-      {/if}
-
-      <aside class="chaos-params">
-        <h3>Chaos Parameters</h3>
-        <div class="param">
-          <span>Absurdity</span>
-          <div class="param-bar">
-            <div class="param-fill" style="width: {(story.absurdity_initial * 100).toFixed(0)}%; background: #f59e0b;"></div>
-          </div>
-          <span class="param-value">{story.absurdity_initial.toFixed(2)} +{story.absurdity_increment.toFixed(2)}/ch</span>
-        </div>
-        <div class="param">
-          <span>Surrealism</span>
-          <div class="param-bar">
-            <div class="param-fill" style="width: {(story.surrealism_initial * 100).toFixed(0)}%; background: #8b5cf6;"></div>
-          </div>
-          <span class="param-value">{story.surrealism_initial.toFixed(2)} +{story.surrealism_increment.toFixed(2)}/ch</span>
-        </div>
-        <div class="param">
-          <span>Ridiculousness</span>
-          <div class="param-bar">
-            <div class="param-fill" style="width: {(story.ridiculousness_initial * 100).toFixed(0)}%; background: #ec4899;"></div>
-          </div>
-          <span class="param-value">{story.ridiculousness_initial.toFixed(2)} +{story.ridiculousness_increment.toFixed(2)}/ch</span>
-        </div>
-        <div class="param">
-          <span>Insanity</span>
-          <div class="param-bar">
-            <div class="param-fill" style="width: {(story.insanity_initial * 100).toFixed(0)}%; background: #ef4444;"></div>
-          </div>
-          <span class="param-value">{story.insanity_initial.toFixed(2)} +{story.insanity_increment.toFixed(2)}/ch</span>
-        </div>
-      </aside>
-      <aside class="content-params">
-        <h3>Content Axes</h3>
-        <div class="content-axis-grid">
-          {#each contentAxisSummaries as axis (axis.key)}
-            <div
-              class="content-axis-card"
-              style={`--axis-color:${axis.color}; --axis-color-soft:${axis.color}33`}
-            >
-              <header>
-                <h4>{axis.label}</h4>
-                <p>{axis.description}</p>
-              </header>
-              <div class="content-bars">
-                <div class="bar target">
-                  <div class="bar-track">
-                    <div class="bar-fill" style={`--progress:${axis.targetProgress}`}></div>
-                  </div>
-                  <span>Target {axis.targetDisplay}</span>
-                </div>
-                <div class="bar observed">
-                  <div class="bar-track">
-                    <div class="bar-fill" style={`--progress:${axis.observedProgress}`}></div>
-                  </div>
-                  <span>Observed {axis.observedDisplay}</span>
-                </div>
-              </div>
-              <footer>
-                <span>Momentum {axis.momentumDisplay}</span>
-                <span>Premise {axis.multiplierDisplay}</span>
-              </footer>
-            </div>
-          {/each}
-        </div>
-      </aside>
-      {#if story.status === 'active' && isAuthenticated}
-        <button class="generate-button" on:click={handleGenerateChapter} disabled={generating}>
-          {generating ? 'Generating…' : 'Generate New Chapter'}
-        </button>
-      {/if}
-      {#if story.status === 'active' && isAuthenticated}
-        <button class="kill-button" on:click={handleKill} disabled={killing}>
-          {killing ? 'Ending…' : 'Kill Story'}
-        </button>
-      {/if}
-      {#if isAuthenticated}
-        <button class="delete-button" on:click={handleDelete} disabled={deleting}>
-          {deleting ? 'Deleting…' : 'Delete Story'}
-        </button>
-      {/if}
-      {#if killError}
-        <p class="kill-error">{killError}</p>
-      {/if}
-      {#if deleteError}
-        <p class="delete-error">{deleteError}</p>
-      {/if}
-      {#if generateError}
-        <p class="generate-error">{generateError}</p>
-      {/if}
-    </div>
+    
   </header>
 
   {#if story.status === 'completed' && story.completion_reason}
@@ -684,11 +393,6 @@
       Story completed: {story.completion_reason}
     </div>
   {/if}
-
-  <section class="analysis">
-    <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
-    <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
-  </section>
 
   <section class="chapters">
     {#each story.chapters as chapter (chapter.id)}
@@ -760,6 +464,310 @@
       </article>
     {/each}
   </section>
+
+  <section class="story-insights">
+    <aside class="side-panel">
+      <aside class="meta">
+        <div>
+          <span>Chapters</span>
+          <strong>{story.chapter_count}</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong>{story.status}</strong>
+        </div>
+        <div>
+          <span>Tokens</span>
+          <strong>{story.total_tokens ?? 0}</strong>
+        </div>
+        {#if story.estimated_reading_time_minutes}
+          <div>
+            <span>Reading Time</span>
+            <strong>{story.estimated_reading_time_minutes} min</strong>
+          </div>
+        {/if}
+        {#if story.aggregate_stats}
+          <div>
+            <span>Total Words</span>
+            <strong>{story.aggregate_stats.total_word_count.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Avg Words/Ch</span>
+            <strong>{story.aggregate_stats.avg_words_per_chapter.toFixed(0)}</strong>
+          </div>
+          <div>
+            <span>Avg Word Length</span>
+            <strong>{story.aggregate_stats.avg_word_length.toFixed(1)} chars</strong>
+          </div>
+          <div>
+            <span>Lexical Diversity</span>
+            <strong>{(story.aggregate_stats.overall_lexical_diversity * 100).toFixed(1)}%</strong>
+          </div>
+        {/if}
+      </aside>
+
+      <aside class="chaos-params">
+        <h3>Chaos Parameters</h3>
+        <div class="param">
+          <span>Absurdity</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.absurdity_initial * 100).toFixed(0)}%; background: #f59e0b;"></div>
+          </div>
+          <span class="param-value">{story.absurdity_initial.toFixed(2)} +{story.absurdity_increment.toFixed(2)}/ch</span>
+        </div>
+        <div class="param">
+          <span>Surrealism</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.surrealism_initial * 100).toFixed(0)}%; background: #8b5cf6;"></div>
+          </div>
+          <span class="param-value">{story.surrealism_initial.toFixed(2)} +{story.surrealism_increment.toFixed(2)}/ch</span>
+        </div>
+        <div class="param">
+          <span>Ridiculousness</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.ridiculousness_initial * 100).toFixed(0)}%; background: #ec4899;"></div>
+          </div>
+          <span class="param-value">{story.ridiculousness_initial.toFixed(2)} +{story.ridiculousness_increment.toFixed(2)}/ch</span>
+        </div>
+        <div class="param">
+          <span>Insanity</span>
+          <div class="param-bar">
+            <div class="param-fill" style="width: {(story.insanity_initial * 100).toFixed(0)}%; background: #ef4444;"></div>
+          </div>
+          <span class="param-value">{story.insanity_initial.toFixed(2)} +{story.insanity_increment.toFixed(2)}/ch</span>
+        </div>
+      </aside>
+
+      <aside class="content-params">
+        <h3>Content Axes</h3>
+        <div class="content-axis-grid">
+          {#each contentAxisSummaries as axis (axis.key)}
+            <div
+              class="content-axis-card"
+              style={`--axis-color:${axis.color}; --axis-color-soft:${axis.color}33`}
+            >
+              <header>
+                <h4>{axis.label}</h4>
+                <p>{axis.description}</p>
+              </header>
+              <div class="content-bars">
+                <div class="bar target">
+                  <div class="bar-track">
+                    <div class="bar-fill" style={`--progress:${axis.targetProgress}`}></div>
+                  </div>
+                  <span>Target {axis.targetDisplay}</span>
+                </div>
+                <div class="bar observed">
+                  <div class="bar-track">
+                    <div class="bar-fill" style={`--progress:${axis.observedProgress}`}></div>
+                  </div>
+                  <span>Observed {axis.observedDisplay}</span>
+                </div>
+              </div>
+              <footer>
+                <span>Momentum {axis.momentumDisplay}</span>
+                <span>Premise {axis.multiplierDisplay}</span>
+              </footer>
+            </div>
+          {/each}
+        </div>
+      </aside>
+
+      {#if story.status === 'active' && isAuthenticated}
+        <button class="generate-button" on:click={handleGenerateChapter} disabled={generating}>
+          {generating ? 'Generating…' : 'Generate New Chapter'}
+        </button>
+      {/if}
+      {#if story.status === 'active' && isAuthenticated}
+        <button class="kill-button" on:click={handleKill} disabled={killing}>
+          {killing ? 'Ending…' : 'Kill Story'}
+        </button>
+      {/if}
+      {#if isAuthenticated}
+        <button class="delete-button" on:click={handleDelete} disabled={deleting}>
+          {deleting ? 'Deleting…' : 'Delete Story'}
+        </button>
+      {/if}
+      {#if killError}
+        <p class="kill-error">{killError}</p>
+      {/if}
+      {#if deleteError}
+        <p class="delete-error">{deleteError}</p>
+      {/if}
+      {#if generateError}
+        <p class="generate-error">{generateError}</p>
+      {/if}
+    </aside>
+
+  <section class="analysis">
+    <StoryDna story={story} chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+    <StoryTimeline chapters={story.chapters ?? []} evaluations={story.evaluations ?? []} />
+  </section>
+</section>
+
+  {#if hasUniverseContext(universe)}
+    <section class="shared-universe">
+      <div class="universe-panel">
+        <h3>Shared Universe</h3>
+        {#if universe?.cluster_id}
+          <div class="universe-cluster">
+            <div class="cluster-label">{universe?.cluster_label ?? 'Continuity Cluster'}</div>
+            <div class="cluster-meta">
+              <span><strong>{universe?.cluster_size ?? 0}</strong> stories linked</span>
+              <span>Cohesion <strong>{formatCohesion(universe?.cohesion)}</strong></span>
+            </div>
+          </div>
+        {/if}
+
+        {#if universe?.related_stories?.length}
+          <div class="related-block">
+            <h4>Intersecting Stories</h4>
+            <ul>
+              {#each universe.related_stories as related}
+                <li>
+                  <a href={`/story/${related.story_id}`}>
+                    <div class="related-heading">
+                      <strong>{related.title || 'Untitled Story'}</strong>
+                      <span class="related-weight">Affinity {formatCohesion(related.weight)}</span>
+                    </div>
+                    {#if related.shared_entities?.length}
+                      <div class="shared-row">
+                        <span class="shared-label">Characters</span>
+                        <div class="shared-chips">
+                          {#each related.shared_entities.slice(0, 4) as entity}
+                            <span class="chip">{entity}</span>
+                          {/each}
+                          {#if related.shared_entities.length > 4}
+                            <span class="chip more">+{related.shared_entities.length - 4}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                    {#if related.shared_themes?.length}
+                      <div class="shared-row">
+                        <span class="shared-label">Motifs</span>
+                        <div class="shared-chips">
+                          {#each related.shared_themes.slice(0, 4) as theme}
+                            <span class="chip">{theme}</span>
+                          {/each}
+                          {#if related.shared_themes.length > 4}
+                            <span class="chip more">+{related.shared_themes.length - 4}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {:else if universe?.cluster_id}
+          <p class="universe-empty">This story shares a continuity thread, but no direct crossovers have surfaced yet.</p>
+        {/if}
+
+        <div class="override-block">
+          <h4>Manual Corrections</h4>
+          {#if isAuthenticated}
+            <form class="override-form" on:submit|preventDefault={submitOverride}>
+              <div class="field">
+                <label for="override-name">Entity Name</label>
+                <input
+                  id="override-name"
+                  type="text"
+                  bind:value={overrideName}
+                  placeholder="e.g. Captain Voss"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="override-action">Action</label>
+                <select id="override-action" bind:value={overrideAction}>
+                  <option value="suppress">Suppress</option>
+                  <option value="merge">Merge Alias</option>
+                </select>
+              </div>
+              {#if overrideAction === 'merge'}
+                <div class="field">
+                  <label for="override-target">Merge Into</label>
+                  <input
+                    id="override-target"
+                    type="text"
+                    bind:value={overrideTarget}
+                    placeholder="Canonical name"
+                    required
+                  />
+                </div>
+              {/if}
+              <div class="field">
+                <label for="override-scope">Scope</label>
+                <select id="override-scope" bind:value={overrideScope}>
+                  <option value="story">This Story</option>
+                  <option value="global">All Stories</option>
+                </select>
+              </div>
+              <div class="field notes">
+                <label for="override-notes">Notes</label>
+                <textarea
+                  id="override-notes"
+                  bind:value={overrideNotes}
+                  rows="1"
+                  placeholder="Optional context or reasoning"
+                ></textarea>
+              </div>
+              <div class="field action">
+                <button type="submit" class="override-submit" disabled={overrideSaving}>
+                  {overrideSaving ? 'Saving…' : 'Save Override'}
+                </button>
+              </div>
+            </form>
+          {:else}
+            <p class="override-info-text">Sign in to manage manual overrides.</p>
+          {/if}
+          {#if overrideError}
+            <p class="override-error">{overrideError}</p>
+          {/if}
+
+          {#if overrides.length}
+            <ul class="override-list">
+              {#each overrides as item (item.id)}
+                <li class="override-item">
+                  <div class="override-info">
+                    <div class="override-heading">
+                      <span class={`scope-badge ${item.scope}`}>
+                        {item.scope === 'global' ? 'Global' : 'Story'}
+                      </span>
+                      <strong>{item.name}</strong>
+                      <span class="override-action">{item.action}</span>
+                      {#if item.action === 'merge' && item.target_name}
+                        <span class="merge-target">→ {item.target_name}</span>
+                      {/if}
+                    </div>
+                    {#if item.notes}
+                      <p class="override-notes">{item.notes}</p>
+                    {/if}
+                    <div class="override-meta">
+                      Updated {formatTimestamp(item.updated_at)}
+                    </div>
+                  </div>
+                  {#if isAuthenticated}
+                    <button
+                      class="override-remove"
+                      on:click|preventDefault={() => removeOverride(item.id)}
+                      disabled={removingOverrides[item.id]}
+                    >
+                      {removingOverrides[item.id] ? 'Removing…' : 'Remove'}
+                    </button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="universe-empty">No manual overrides for this story yet.</p>
+          {/if}
+        </div>
+      </div>
+    </section>
+  {/if}
 </div>
 
 {#if coverModalOpen && story.cover_image_url}
@@ -1264,16 +1272,24 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
-    max-height: 60vh;
-    overflow-y: auto;
-    padding-right: 1rem;
+    margin-top: 2.5rem;
+    margin-bottom: 3rem;
+  }
+
+  .story-insights {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+  }
+
+  .shared-universe {
+    margin-top: 3rem;
   }
 
   .analysis {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    margin-bottom: 2rem;
   }
 
   .chapter {
