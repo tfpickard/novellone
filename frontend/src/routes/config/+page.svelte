@@ -15,6 +15,8 @@
     | 'min_active_stories'
     | 'max_active_stories'
     | 'context_window_chapters'
+    | 'summary_refresh_interval_chapters'
+    | 'summary_context_chapters'
     | 'openai_temperature_chapter'
     | 'openai_temperature_premise'
     | 'openai_temperature_eval'
@@ -67,6 +69,8 @@
     min_active_stories: 1,
     max_active_stories: 3,
     context_window_chapters: 3,
+    summary_refresh_interval_chapters: 3,
+    summary_context_chapters: 10,
     openai_model: 'gpt-4o-mini',
     openai_premise_model: 'gpt-4o-mini',
     openai_eval_model: 'gpt-4o-mini',
@@ -226,6 +230,28 @@
       kind: 'number',
       type: 'int',
       min: 1,
+      max: 50,
+      step: 1
+    },
+    {
+      key: 'summary_refresh_interval_chapters',
+      label: 'Summary Refresh Interval',
+      description: 'How often the gpt-5-nano recap is regenerated to keep continuity fresh.',
+      hint: 'Lower values improve memory at the cost of more tokens.',
+      kind: 'number',
+      type: 'int',
+      min: 1,
+      max: 50,
+      step: 1
+    },
+    {
+      key: 'summary_context_chapters',
+      label: 'Summary Context Chapters',
+      description: 'How many chapters are fed into the recap prompt when refreshing the summary.',
+      hint: 'Increase to retain older arcs, decrease to save tokens.',
+      kind: 'number',
+      type: 'int',
+      min: 3,
       max: 50,
       step: 1
     },

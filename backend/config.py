@@ -44,6 +44,12 @@ class AppSettings(BaseSettings):
     min_active_stories: int = Field(..., alias="MIN_ACTIVE_STORIES")
     max_active_stories: int = Field(..., alias="MAX_ACTIVE_STORIES")
     context_window_chapters: int = Field(..., alias="CONTEXT_WINDOW_CHAPTERS")
+    summary_refresh_interval_chapters: int = Field(
+        ..., alias="SUMMARY_REFRESH_INTERVAL_CHAPTERS"
+    )
+    summary_context_chapters: int = Field(
+        ..., alias="SUMMARY_CONTEXT_CHAPTERS"
+    )
     max_chapters_per_story: int = Field(..., alias="MAX_CHAPTERS_PER_STORY")
     min_chapters_before_eval: int = Field(..., alias="MIN_CHAPTERS_BEFORE_EVAL")
 

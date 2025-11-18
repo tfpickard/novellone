@@ -36,6 +36,11 @@ class Story(Base):
     theme_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_chapter_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    context_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context_summary_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    context_summary_chapter: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality_score_average: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_score_samples: Mapped[int] = mapped_column(Integer, default=0)
 
     # Style and metadata
     style_authors: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)  # List of 1-3 author names

@@ -82,6 +82,18 @@
   const formatTimestamp = (value: string | null | undefined) =>
     value ? new Date(value).toLocaleString() : '—';
 
+  const formatQualityScore = (value: number | null | undefined): string => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+    return `${Math.round(value * 100)}%`;
+  };
+
+  const qualityLevelClass = (value: number | null | undefined): string => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return 'quality-none';
+    if (value >= 0.75) return 'quality-high';
+    if (value >= 0.55) return 'quality-mid';
+    return 'quality-low';
+  };
+
   const resetOverrideForm = () => {
     overrideScope = 'story';
     overrideAction = 'suppress';
@@ -312,6 +324,22 @@
             {/each}
           </div>
         {/if}
+        {#if story.context_summary}
+          <section class="story-summary-card">
+            <header>
+              <h3>Story so far</h3>
+              <span>
+                {#if story.context_summary_chapter}
+                  After chapter {story.context_summary_chapter}
+                {/if}
+                {#if story.context_summary_updated_at}
+                  · Updated {formatTimestamp(story.context_summary_updated_at)}
+                {/if}
+              </span>
+            </header>
+            <p>{story.context_summary}</p>
+          </section>
+        {/if}
       </div>
     </div>
     <div class="side-panel">
@@ -352,6 +380,15 @@
             <strong>{(story.aggregate_stats.overall_lexical_diversity * 100).toFixed(1)}%</strong>
           </div>
         {/if}
+        <div class={`quality-meta ${qualityLevelClass(story.aggregate_quality_score)}`}>
+          <span>Avg Quality</span>
+          <div>
+            <strong>{formatQualityScore(story.aggregate_quality_score)}</strong>
+            {#if story.quality_score_samples}
+              <small>{story.quality_score_samples} reviews</small>
+            {/if}
+          </div>
+        </div>
       </aside>
 
       {#if hasUniverseContext(universe)}
@@ -999,6 +1036,41 @@
     border: 1px solid rgba(249, 115, 22, 0.3);
   }
 
+  .story-summary-card {
+    margin-top: 1.25rem;
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+  }
+
+  .story-summary-card header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .story-summary-card h3 {
+    margin: 0;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--primary-color, #38bdf8);
+  }
+
+  .story-summary-card header span {
+    font-size: 0.8rem;
+    opacity: 0.7;
+  }
+
+  .story-summary-card p {
+    margin: 0;
+    line-height: 1.6;
+  }
+
   .meta {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1024,6 +1096,41 @@
 
   .meta strong {
     font-size: 1.4rem;
+  }
+
+  .quality-meta {
+    border-radius: 10px;
+    padding: 0.5rem;
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+
+  .quality-meta strong {
+    font-size: 1.2rem;
+  }
+
+  .quality-meta small {
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .quality-meta.quality-high {
+    border-color: rgba(34, 197, 94, 0.5);
+    color: #bbf7d0;
+  }
+
+  .quality-meta.quality-mid {
+    border-color: rgba(234, 179, 8, 0.45);
+    color: #fef3c7;
+  }
+
+  .quality-meta.quality-low {
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fecaca;
+  }
+
+  .quality-meta.quality-none {
+    opacity: 0.75;
   }
 
   .kill-button {

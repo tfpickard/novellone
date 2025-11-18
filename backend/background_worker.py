@@ -21,7 +21,12 @@ from meta import (
     UniverseRefreshResult,
 )
 from story_evaluator import evaluate_story
-from story_generator import generate_chapter, generate_cover_image, spawn_new_story
+from story_generator import (
+    generate_chapter,
+    generate_cover_image,
+    generate_story_summary,
+    spawn_new_story,
+)
 from websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -121,7 +126,9 @@ class BackgroundWorker:
             return
 
         if story.chapter_count >= config.max_chapters_per_story:
-            await self._complete_story(session, story, "Reached max chapters")
+            await self._complete_story(
+                session, story, "Reached max chapters", config
+            )
             return
 
         last_chapter = story.last_chapter_at or story.created_at
@@ -155,7 +162,13 @@ class BackgroundWorker:
             )
 
     async def _create_chapter(
-        self, session, story: Story, config: RuntimeConfig
+        self,
+        session,
+        story: Story,
+        config: RuntimeConfig,
+        *,
+        finale: bool = False,
+        completion_reason: str | None = None,
     ) -> Chapter:
         chapters_stmt = (
             select(Chapter)
@@ -165,7 +178,14 @@ class BackgroundWorker:
         )
         recent = list((await session.execute(chapters_stmt)).scalars())
         recent.reverse()
-        chapter_data = await generate_chapter(story, recent, chapter_number=story.chapter_count + 1)
+        chapter_data = await generate_chapter(
+            story,
+            recent,
+            chapter_number=story.chapter_count + 1,
+            story_summary=story.context_summary,
+            finale=finale,
+            completion_reason=completion_reason,
+        )
         chapter = Chapter(story_id=story.id, **chapter_data)
         session.add(chapter)
         story.chapter_count += 1
@@ -200,7 +220,49 @@ class BackgroundWorker:
             tokens,
             chapter.generation_time_ms,
         )
+        await self._maybe_refresh_summary(
+            session, story, config, force=finale
+        )
         return chapter
+
+    async def _maybe_refresh_summary(
+        self,
+        session,
+        story: Story,
+        config: RuntimeConfig,
+        *,
+        force: bool = False,
+    ) -> None:
+        if story.chapter_count == 0:
+            return
+
+        last_chapter = story.context_summary_chapter or 0
+        needs_summary = not story.context_summary
+        interval = config.summary_refresh_interval_chapters
+
+        if not force and not needs_summary:
+            if (story.chapter_count - last_chapter) < interval:
+                return
+
+        stmt = (
+            select(Chapter)
+            .where(Chapter.story_id == story.id)
+            .order_by(Chapter.chapter_number.desc())
+            .limit(config.summary_context_chapters)
+        )
+        snapshots = list((await session.execute(stmt)).scalars())
+        if not snapshots:
+            return
+
+        snapshots.reverse()
+        summary_text = await generate_story_summary(story, snapshots)
+        if not summary_text:
+            return
+
+        story.context_summary = summary_text
+        story.context_summary_updated_at = datetime.utcnow()
+        story.context_summary_chapter = story.chapter_count
+        await session.flush()
 
     async def _evaluate_story(
         self, session, story: Story, config: RuntimeConfig
@@ -226,12 +288,22 @@ class BackgroundWorker:
         )
         session.add(evaluation)
         await session.flush()
+
+        previous_count = story.quality_score_samples or 0
+        previous_average = story.quality_score_average or 0.0
+        new_count = previous_count + 1
+        new_average = (
+            (previous_average * previous_count) + evaluation.overall_score
+        ) / new_count
+        story.quality_score_samples = new_count
+        story.quality_score_average = new_average
+
         if (
             not evaluation.should_continue
             or evaluation.overall_score < config.quality_score_min
         ):
             reason = evaluation.reasoning or "Quality threshold not met"
-            await self._complete_story(session, story, reason)
+            await self._complete_story(session, story, reason, config)
         logger.info(
             "Evaluated story %s: overall=%.2f should_continue=%s",
             story.title,
@@ -253,14 +325,38 @@ class BackgroundWorker:
 
         return chapter
 
-    async def _complete_story(self, session, story: Story, reason: str) -> None:
+    async def _complete_story(
+        self,
+        session,
+        story: Story,
+        reason: str,
+        config: RuntimeConfig | None = None,
+    ) -> None:
         if story.status != "completed":
+            finale_written = False
+            if config is not None and story.status == "active":
+                try:
+                    await self._create_chapter(
+                        session,
+                        story,
+                        config,
+                        finale=True,
+                        completion_reason=reason,
+                    )
+                    finale_written = True
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "Failed to generate concluding chapter for %s: %s",
+                        story.title,
+                        exc,
+                    )
+
             story.status = "completed"
             story.completed_at = datetime.utcnow()
             story.completion_reason = reason
             await session.flush()
             self._stories_to_refresh.add(story.id)
-            
+
             # Generate cover image for the completed story (only if we don't have one)
             if not story.cover_image_url:
                 logger.info("Generating cover image for completed story: %s", story.title)
@@ -288,6 +384,11 @@ class BackgroundWorker:
                 )
             logger.info("Story %s completed: %s", story.title, reason)
 
+            if finale_written and config is not None:
+                await self._maybe_refresh_summary(
+                    session, story, config, force=True
+                )
+
     async def _maintain_story_count(self, session, config: RuntimeConfig) -> None:
         count_stmt = select(func.count()).select_from(Story).where(Story.status == "active")
         active_count = (await session.execute(count_stmt)).scalar_one()
@@ -314,7 +415,9 @@ class BackgroundWorker:
             )
             victims = list((await session.execute(victims_stmt)).scalars())
             for story in victims:
-                await self._complete_story(session, story, "Reduced to maintain limit")
+                await self._complete_story(
+                    session, story, "Reduced to maintain limit", config
+                )
 
     async def _spawn_story(self, session, config: RuntimeConfig) -> None:
         payload = await spawn_new_story(config)
@@ -425,6 +528,15 @@ class BackgroundWorker:
         if self._last_full_refresh is None:
             return True
         return (datetime.utcnow() - self._last_full_refresh) >= self._full_refresh_interval
+
+    async def finalize_story(
+        self,
+        session,
+        story: Story,
+        reason: str,
+        config: RuntimeConfig,
+    ) -> None:
+        await self._complete_story(session, story, reason, config)
 
 
 def create_worker() -> BackgroundWorker:
