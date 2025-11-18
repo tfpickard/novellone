@@ -1012,19 +1012,32 @@ async def generate_story_summary(story: Story, chapters: Sequence[Chapter]) -> s
         f"Chapter excerpts:\n{context_block}"
     )
 
+    model_lower = _SUMMARY_MODEL.lower()
+    is_reasoning_model = any(x in model_lower for x in ["o1", "gpt-5", "reasoning"])
+    is_gpt5_model = "gpt-5" in model_lower
+
+    request_params: dict[str, Any] = {
+        "model": _SUMMARY_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a precise story analyst who writes spoiler-free recaps.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    max_tokens = 400
+    if is_reasoning_model:
+        request_params["max_completion_tokens"] = min(max_tokens * 2, 4000)
+    else:
+        request_params["max_tokens"] = max_tokens
+
+    if not is_reasoning_model and not is_gpt5_model:
+        request_params["temperature"] = 0.2
+
     try:
-        response = await _client.chat.completions.create(
-            model=_SUMMARY_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a precise story analyst who writes spoiler-free recaps.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=400,
-            temperature=0.2,
-        )
+        response = await _client.chat.completions.create(**request_params)
     except OpenAIError as exc:
         logger.exception("Failed to generate story summary for %s: %s", story.title, exc)
         return ""
