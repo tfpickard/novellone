@@ -31,6 +31,21 @@ _client = AsyncOpenAI(api_key=_settings.openai_api_key)
 _PROMPT_STATE_KEY = "premise_prompt_state"
 _MAX_DYNAMIC_DIRECTIVES = 4
 
+_INSPIRATION_TITLES: tuple[str, ...] = (
+    "Pulses Beneath the Nebula Bureau",
+    "Minutes from the Chrono-Ferry Union",
+    "Liturgies for Broken Terraformers",
+    "Archive of the Failed Star-Sheriffs",
+    "The Paperwork of Black Hole 19",
+    "Orchids for the Recursive Machinist",
+    "Moonlit Cabinet of Ghosted Interfaces",
+    "Protocol for Singing Gravity",
+    "The Soft Apocalypse of Postage 7",
+    "Liminal Salt for Bureaucratic Mermaids",
+    "Faithless Cartographers of Europa",
+    "The Jellyfish Congress of Lost Minutes",
+)
+
 _CONTENT_AXIS_LABELS: dict[str, str] = {
     "sexual_content": "Sexual content/intimacy",
     "violence": "Violence/combat intensity",
@@ -42,6 +57,9 @@ _CONTENT_AXIS_LABELS: dict[str, str] = {
     "crime_illicit_activity": "Crime and illicit activity",
     "political_ideology": "Political or ideological themes",
     "supernatural_occult": "Supernatural or occult elements",
+    "cosmic_horror": "Cosmic horror and existential dread",
+    "bureaucratic_satire": "Bureaucratic satire and paperwork absurdity",
+    "archival_glitch": "Archival glitches, redactions, and broken records",
 }
 
 _COVER_AXIS_MOODS: dict[str, str] = {
@@ -55,6 +73,9 @@ _COVER_AXIS_MOODS: dict[str, str] = {
     "crime_illicit_activity": "noir intrigue",
     "political_ideology": "ideological debate",
     "supernatural_occult": "mystical wonder",
+    "cosmic_horror": "ominous cosmic dread",
+    "bureaucratic_satire": "surreal paperwork theater",
+    "archival_glitch": "fragmented archival mystery",
 }
 
 _PROMPT_SAFETY_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -197,6 +218,13 @@ def _generate_story_content_settings(
             "premise_multiplier": round(jittered_multiplier, 3),
         }
     return generated
+
+
+def _select_inspiration_titles(count: int = 6) -> list[str]:
+    total_available = len(_INSPIRATION_TITLES)
+    if count >= total_available:
+        return list(_INSPIRATION_TITLES)
+    return random.sample(_INSPIRATION_TITLES, count)
 
 
 def _momentum_description(momentum: float) -> str:
@@ -495,6 +523,9 @@ def _render_premise_prompt(
         "}\n\n"
     )
 
+    inspiration_titles = _select_inspiration_titles()
+    inspiration_block = "\n".join(f"- {title}" for title in inspiration_titles)
+
     return (
         "Generate a unique, creative science fiction story premise.\n\n"
         "Requirements:\n"
@@ -512,12 +543,7 @@ def _render_premise_prompt(
         "Respond with ONLY valid JSON in this exact structure (no markdown code blocks, no extra text):\n\n"
         f"{json_structure}"
         "Example titles for inspiration (create something different):\n"
-        "- Echoes of the Quantum Conductor\n"
-        "- The Symphony of Interfaces\n"
-        "- Resonance of the Distant Past\n"
-        "- Neural Labyrinth Protocol\n"
-        "- Cathedral of Borrowed Futures\n"
-        "- The Recursion Architects"
+        f"{inspiration_block}"
     )
 
 
@@ -1165,11 +1191,24 @@ async def generate_story_premise(config: RuntimeConfig) -> dict[str, Any]:
         "Don DeLillo",
         "Chinua Achebe",
         "Toni Morrison",
-        "Gabriel García Márquez",
         "Salman Rushdie",
         "Milan Kundera",
         "Cormac McCarthy",
         "Vladimir Nabokov",
+        "N. K. Jemisin",
+        "Ted Chiang",
+        "Jeff VanderMeer",
+        "China Miéville",
+        "Nnedi Okorafor",
+        "Samuel R. Delany",
+        "Becky Chambers",
+        "Ann Leckie",
+        "Catherynne M. Valente",
+        "Ken Liu",
+        "Mark Z. Danielewski",
+        "Lauren Beukes",
+        "Kelly Link",
+        "Rivers Solomon",
     ]
 
     # Randomly select 1-3 authors

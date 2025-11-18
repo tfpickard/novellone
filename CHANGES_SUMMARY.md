@@ -9,11 +9,13 @@ The platform now treats narrative tone as a first-class primitive. Ten configura
 - Added JSONB columns and SQLAlchemy mappings for story-level content settings and chapter-level readings.
 - Normalised ten named axes (sexual content, violence, strong language, drug use, horror & suspense, gore, romance focus, crime, political themes, supernatural elements) with average level, momentum, and premise remix multiplier controls.
 - Extended runtime configuration to validate and persist axis edits, exposing them through the admin API and client.
+- Expanded the axis catalog with cosmic horror, bureaucratic satire, and archival glitch defaults so prompts and analytics can lean into stranger registers out of the box.
 
 ### Prompting, storage, and telemetry
 - Story generation now seeds OpenAI prompts with per-axis expectations, captures chapter feedback, and clamps malformed responses before persisting.
 - WebSocket broadcasts and REST payloads surface the content metrics so live clients and dashboards stay in sync.
 - Stats and recommendation feeds aggregate axis averages alongside chaos readings for richer analytics.
+- Premise prompt directives refresh more aggressively (see environment defaults) and now rotate through a larger pool of sample titles to keep the seeds feeling new.
 
 ### Frontend UX updates
 - Introduced shared metadata helpers so all Svelte views consume consistent axis definitions and defaults.

@@ -37,6 +37,9 @@ CONTENT_AXIS_KEYS: tuple[str, ...] = (
     "crime_illicit_activity",
     "political_ideology",
     "supernatural_occult",
+    "cosmic_horror",
+    "bureaucratic_satire",
+    "archival_glitch",
 )
 
 
