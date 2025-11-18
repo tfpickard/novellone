@@ -217,6 +217,9 @@ class Chapter(Base):
     chapter_number: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    content_levels: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     generation_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_used: Mapped[str | None] = mapped_column(String(50), nullable=True)

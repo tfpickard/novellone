@@ -87,6 +87,7 @@ class ChapterRead(BaseModel):
     chapter_number: int
     content: str
     created_at: datetime
+    content_levels: dict[str, Any] = Field(default_factory=dict)
     tokens_used: int | None = None
     generation_time_ms: int | None = None
     model_used: str | None = None
@@ -105,6 +106,7 @@ class ChapterRead(BaseModel):
             chapter_number=chapter.chapter_number,
             content=chapter.content,
             created_at=chapter.created_at,
+            content_levels=chapter.content_levels or {},
             tokens_used=chapter.tokens_used,
             generation_time_ms=chapter.generation_time_ms,
             model_used=chapter.model_used,

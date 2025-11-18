@@ -85,6 +85,7 @@ Migrations are stored in `backend/alembic/versions/`:
 - `0007_meta_analysis_operations.py` - Operational metadata for analysis runs
 - `0008_add_content_controls.py` - Compatibility placeholder so deployed databases with this revision can continue upgrading
 - `0009_story_summary_and_quality.py` - Stored story recaps and rolling quality metrics
+- `0010_add_chapter_content_levels.py` - Reintroduces the chapter content-moderation metadata column with safe defaults
 
 ## Troubleshooting
 
