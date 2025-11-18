@@ -3,10 +3,21 @@
   import { getStories } from '$lib/api';
   import type { PageData } from './$types';
   import { createThemeAction, type StoryTheme } from '$lib/theme';
+  import { stripMarkdown } from '$lib/markdown';
+  import {
+    DEFAULT_OG_IMAGE,
+    META_KEYWORDS,
+    SITE_DESCRIPTION,
+    SITE_NAME,
+    buildCanonicalUrl
+  } from '$lib/seo';
 
   export let data: PageData;
 
   const initialStories = data.stories.items ?? [];
+  const homeCanonicalUrl = buildCanonicalUrl('/');
+  const homeOgImage = DEFAULT_OG_IMAGE;
+  const baseDescription = SITE_DESCRIPTION;
   type StorySummary = (typeof initialStories)[number];
   let stories: StorySummary[] = [...initialStories];
   let storyIds = new Set(stories.map((story) => story.id));
@@ -60,25 +71,6 @@
     return Number.isNaN(time) ? 0 : time;
   };
 
-  function stripMarkdown(text: string): string {
-    return (
-      text
-        // Remove code fences
-        .replace(/```[\s\S]*?```/g, '')
-        // Remove inline code
-        .replace(/`([^`]+)`/g, '$1')
-        // Remove images
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-        // Replace links with link text
-        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-        // Remove emphasis markers
-        .replace(/[*_~>#-]+/g, ' ')
-        // Collapse whitespace
-        .replace(/\s+/g, ' ')
-        .trim()
-    );
-  }
-
   function preview(text: string | null | undefined, limit = 180): string {
     if (!text) return '';
     const plain = stripMarkdown(text);
@@ -100,6 +92,7 @@
 
   $: activeCount = stories.filter((story) => story.status === 'active').length;
   $: completedCount = stories.filter((story) => story.status === 'completed').length;
+  $: metaDescription = `${baseDescription} Currently tracking ${activeCount} active stories, ${completedCount} completed sagas, and ${total} total experiments.`;
   $: coverStories = stories.filter(
     (story) => story.status === 'completed' && Boolean(story.cover_image_url)
   );
@@ -208,11 +201,27 @@
   });
 </script>
 
+<svelte:head>
+  <link rel="canonical" href={homeCanonicalUrl} />
+  <meta name="description" content={metaDescription} />
+  <meta name="keywords" content={META_KEYWORDS} />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content={SITE_NAME} />
+  <meta property="og:description" content={metaDescription} />
+  <meta property="og:url" content={homeCanonicalUrl} />
+  <meta property="og:image" content={homeOgImage} />
+  <meta property="og:site_name" content={SITE_NAME} />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={SITE_NAME} />
+  <meta name="twitter:description" content={metaDescription} />
+  <meta name="twitter:image" content={homeOgImage} />
+</svelte:head>
+
 
 <div class="page-container">
   <header class="hero">
     <div>
-      <h1>Hurl Unmasks Recursive Literature Leaking Out Love</h1>
+      <h1>{SITE_NAME}</h1>
       <p>Autonomous science fiction tales evolving in real time.</p>
     </div>
     <div class="hero-right">

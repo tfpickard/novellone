@@ -14,3 +14,17 @@ export function renderMarkdown(text: string | null | undefined): string {
   return DOMPurify.sanitize(html);
 }
 
+export function stripMarkdown(text: string | null | undefined): string {
+  if (!text) return '';
+  return (
+    text
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[*_~>#-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
