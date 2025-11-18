@@ -2,12 +2,24 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { getStories } from '$lib/api';
+  import {
+    DEFAULT_OG_IMAGE,
+    META_KEYWORDS,
+    SITE_DESCRIPTION,
+    SITE_NAME,
+    SITE_URL,
+    buildCanonicalUrl
+  } from '$lib/seo';
   import { onDestroy, onMount, tick } from 'svelte';
   import type { LayoutData } from './$types';
 
   export let data: LayoutData;
 
-  const fallbackTitle = 'Hurl Unmasks Recursive Literature Leaking Out Love';
+  const fallbackTitle = SITE_NAME;
+  const siteDescription = SITE_DESCRIPTION;
+  const siteKeywords = META_KEYWORDS;
+  const defaultOgImage = DEFAULT_OG_IMAGE;
+  const siteName = SITE_NAME;
 
   type NavItem = {
     href: string;
@@ -41,10 +53,18 @@
   const githubRepoUrl = 'https://github.com/tfpickard/novellone.git';
 
   $: currentPath = $page.url.pathname;
+  $: canonicalUrl = buildCanonicalUrl(currentPath);
   $: hurllolTitle =
     (data?.hurllol?.title && typeof data.hurllol.title === 'string'
       ? data.hurllol.title
       : '') || fallbackTitle;
+  $: structuredData = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: siteName,
+    url: SITE_URL,
+    description: siteDescription
+  });
 
   type SearchResult = {
     id: string;
@@ -183,6 +203,24 @@
 
 <svelte:head>
   <title>{hurllolTitle}</title>
+  <link rel="canonical" href={canonicalUrl} />
+  <meta name="description" content={siteDescription} />
+  <meta name="keywords" content={siteKeywords} />
+  <meta name="theme-color" content="#020617" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content={hurllolTitle} />
+  <meta property="og:description" content={siteDescription} />
+  <meta property="og:url" content={canonicalUrl} />
+  <meta property="og:image" content={defaultOgImage} />
+  <meta property="og:site_name" content={siteName} />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={hurllolTitle} />
+  <meta name="twitter:description" content={siteDescription} />
+  <meta name="twitter:image" content={defaultOgImage} />
+  <script type="application/ld+json">
+    {structuredData}
+  </script>
 </svelte:head>
 
 <nav class="site-nav">

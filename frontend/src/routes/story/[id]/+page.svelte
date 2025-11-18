@@ -23,11 +23,14 @@
   } from '$lib/contentAxes';
   import StoryTimeline from '$lib/components/StoryTimeline.svelte';
   import StoryDna from '$lib/components/StoryDna.svelte';
-  import { renderMarkdown } from '$lib/markdown';
+  import { renderMarkdown, stripMarkdown } from '$lib/markdown';
+  import { DEFAULT_OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, buildCanonicalUrl } from '$lib/seo';
 
   export let data: PageData;
 
   let story = data.story;
+  const metaFallbackDescription = SITE_DESCRIPTION;
+  const descriptionLimit = 220;
   $: isAuthenticated = Boolean(data.config);
   let container: HTMLElement;
   let socket: WebSocket | null = null;
@@ -76,6 +79,30 @@
     applyStoryTheme(theme, container);
   }
   $: premiseHtml = renderMarkdown(story.premise);
+  $: plainPremise = stripMarkdown(story.premise);
+  $: storyMetaDescription = plainPremise
+    ? plainPremise.length > descriptionLimit
+      ? `${plainPremise.slice(0, descriptionLimit - 1).trimEnd()}…`
+      : plainPremise
+    : metaFallbackDescription;
+  $: storyHeadTitle = `${story.title} – ${SITE_NAME}`;
+  $: storyCanonicalUrl = buildCanonicalUrl(`/story/${story.id}`);
+  $: storyOgImage = story.cover_image_url || DEFAULT_OG_IMAGE;
+  $: storyStructuredData = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'CreativeWork',
+    name: story.title,
+    description: storyMetaDescription,
+    url: storyCanonicalUrl,
+    image: story.cover_image_url ?? undefined,
+    datePublished: story.created_at ?? undefined,
+    dateModified: story.updated_at ?? undefined,
+    inLanguage: 'en',
+    author: {
+      '@type': 'Organization',
+      name: SITE_NAME
+    }
+  });
 
   $: contentAxisSettings = sanitizeContentAxisSettings(story.content_settings) as ContentAxisSettingsMap;
   $: storedContentAverages = sanitizeContentLevels(story.content_axis_averages);
@@ -344,6 +371,25 @@
     }
   });
 </script>
+
+<svelte:head>
+  <title>{storyHeadTitle}</title>
+  <link rel="canonical" href={storyCanonicalUrl} />
+  <meta name="description" content={storyMetaDescription} />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content={story.title} />
+  <meta property="og:description" content={storyMetaDescription} />
+  <meta property="og:url" content={storyCanonicalUrl} />
+  <meta property="og:image" content={storyOgImage} />
+  <meta property="og:site_name" content={SITE_NAME} />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={story.title} />
+  <meta name="twitter:description" content={storyMetaDescription} />
+  <meta name="twitter:image" content={storyOgImage} />
+  <script type="application/ld+json">
+    {storyStructuredData}
+  </script>
+</svelte:head>
 
 <div class="page-container story-detail" bind:this={container}>
   <header class="story-header">

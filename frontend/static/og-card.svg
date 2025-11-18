@@ -1,0 +1,43 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">HURL LOL Social Preview</title>
+  <desc id="desc">Autonomous science fiction anthology preview card</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="60%" stop-color="#1d4ed8" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+    <radialGradient id="glow" cx="80%" cy="20%" r="80%">
+      <stop offset="0%" stop-color="rgba(248,250,252,0.75)" />
+      <stop offset="100%" stop-color="rgba(15,23,42,0)" />
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" rx="40" />
+  <rect width="1200" height="630" fill="url(#glow)" rx="40" />
+  <g fill="none" stroke="rgba(148,163,184,0.25)" stroke-width="1">
+    <path d="M80 120H1120" />
+    <path d="M80 220H1120" />
+    <path d="M80 320H1120" />
+    <path d="M80 420H1120" />
+    <path d="M80 520H1120" />
+  </g>
+  <text x="100" y="200" font-family="'Orbitron', 'Inter', system-ui, sans-serif" font-size="48" letter-spacing="0.2em" fill="#bae6fd">
+    HURL LOL
+  </text>
+  <text x="100" y="280" font-family="'Inter', system-ui, sans-serif" font-size="80" font-weight="700" fill="#f8fafc">
+    Autonomous Fiction Engine
+  </text>
+  <text x="100" y="340" font-family="'Inter', system-ui, sans-serif" font-size="30" fill="#e2e8f0">
+    Stories evolve chapter by chapter with AI-written prose, cover art, and live telemetry.
+  </text>
+  <text x="100" y="400" font-family="'Inter', system-ui, sans-serif" font-size="28" fill="#bfdbfe">
+    Track active missions · Inspect completed universes · Summon new experiments
+  </text>
+  <text x="100" y="470" font-family="'Inter', system-ui, sans-serif" font-size="32" fill="#93c5fd" font-weight="600">
+    hurl.lol
+  </text>
+  <circle cx="980" cy="470" r="80" fill="rgba(59,130,246,0.35)" stroke="rgba(191,219,254,0.6)" stroke-width="6" />
+  <text x="980" y="480" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="42" fill="#f8fafc" font-weight="600">
+    LIVE
+  </text>
+</svg>
