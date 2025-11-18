@@ -29,11 +29,14 @@ class PrettyJsonFormatter(logging.Formatter):
 def _build_handlers(settings: AppSettings, level: int) -> Iterable[logging.Handler]:
     # Use Rich handler for console with pretty printing
     # Set a wider console width to prevent excessive wrapping in Docker logs
+    # Disable Rich markup globally to avoid user-provided text (e.g. "[/CHANT]")
+    # from being treated as Rich markup tags, which can raise MarkupError and
+    # break logging output.
     console_handler = RichHandler(
         console=Console(stderr=True, width=120, force_terminal=True),
         show_time=True,
         show_path=True,
-        markup=True,
+        markup=False,
         rich_tracebacks=True,
         tracebacks_show_locals=True,
     )
