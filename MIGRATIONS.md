@@ -81,6 +81,9 @@ Migrations are stored in `backend/alembic/versions/`:
 - `0003_add_cover_image_url.py` - Cover image support
 - `0004_add_chaos_parameters.py` - Story chaos parameters
 - `0005_add_style_metadata.py` - Author styles and metadata
+- `0006_meta_analysis_tables.py` - Tables for meta-analysis runs and aggregates
+- `0007_meta_analysis_operations.py` - Operational metadata for analysis runs
+- `0010_add_chapter_content_levels.py` - Story content controls and per-chapter readings
 
 ## Troubleshooting
 
