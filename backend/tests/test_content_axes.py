@@ -125,10 +125,14 @@ def test_coerce_content_axes_rejects_non_numeric_values() -> None:
 
 
 def test_content_axis_settings_round_trip_from_object() -> None:
-    overrides = {
-        axis: ContentAxisSettings(average_level=axis_idx, momentum=0.1, premise_multiplier=2.0)
-        for axis_idx, axis in enumerate(CONTENT_AXIS_KEYS, start=1)
-    }
+    overrides = {}
+    for axis_idx, axis in enumerate(CONTENT_AXIS_KEYS, start=1):
+        average_level = float((axis_idx % 9) + 1)
+        overrides[axis] = ContentAxisSettings(
+            average_level=average_level,
+            momentum=0.1,
+            premise_multiplier=2.0,
+        )
 
     result = _coerce_content_axes(overrides)
 

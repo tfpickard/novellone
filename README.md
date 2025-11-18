@@ -37,7 +37,8 @@ Hurl Unmasks Recursive Literature Leaking Out Light is a containerized platform 
 - **Autonomous Story Pool** – Keeps the number of active stories between configurable minimum and maximum bounds.
 - **AI Story Generation** – Uses OpenAI Chat Completions for premises, chapters, themes, and critical evaluations.
 - **Chaos Parameters** – Assigns seeded absurdity/surrealism/ridiculousness/insanity values that grow with each chapter.
-- **Content Intensity Controls** – Ten-axis content settings (e.g., sexual content, violence, language, drugs, horror) with average levels, per-chapter momentum, and premise remix multipliers that steer prompts, scoring, and cover art tone.
+- **Content Intensity Controls** – Thirteen-axis content settings (sexual content, violence, strong language, drug use, horror & suspense, gore, romance focus, crime, political themes, supernatural/occult, cosmic horror, bureaucratic satire, archival glitch) with average levels, per-chapter momentum, and premise remix multipliers that steer prompts, scoring, and cover art tone.
+- **Prompt Remix Controls** – Dynamic directives refresh frequently, and admins can inspect/override the active prompt directives via `/api/prompts` to push bespoke creative experiments.
 - **Quality Evaluation Loop** – Scores coherence, novelty, engagement, and pacing. Stories that fall below `quality_score_min` are concluded.
 - **Cover Art Synthesis** – Generates DALL·E book covers automatically when a story completes and periodically backfills missing images.
 - **Live Updates** – Uses WebSockets to push new chapters/completions to connected clients.
@@ -179,6 +180,8 @@ cd novellone
 
 3. Optional overrides can be stored in `backend/config_store.py` via the `/api/config` endpoint.
 
+Administrators can also call `GET /api/prompts` (to inspect) or `PATCH /api/prompts` (to supply `directives` and an optional `rationale`) whenever they want to push bespoke creative constraints into the next batch of premises without restarting the worker.
+
 ---
 
 ## Running the Stack
@@ -265,6 +268,7 @@ Key tables (see `backend/models.py`):
 - `POST /api/admin/spawn` – Manually spawn a story (honors max active limit)
 - `POST /api/admin/reset` – Purge stories & reset config
 - `POST /api/admin/backfill-cover-images` – Generate covers for completed stories
+- `GET /api/prompts` / `PATCH /api/prompts` – Inspect or override the current premise prompt directives and rationale
 
 ### Story Management
 
