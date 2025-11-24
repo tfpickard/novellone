@@ -15,3 +15,5 @@ backend/.venv/
 .idea/
 pgdata/
 .venv
+.vercel
+.env*.local

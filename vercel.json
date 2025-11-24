@@ -1,34 +1,34 @@
 {
-  "version": 2,
-  "crons": [
-    {
-      "path": "/api/cron/generate",
-      "schedule": "*/15 * * * *"
+    "version": 2,
+    "crons": [
+        {
+            "path": "/api/cron/generate",
+            "schedule": "0 3 * * *"
+        },
+        {
+            "path": "/api/cron/evaluate",
+            "schedule": "0 1 * * *"
+        },
+        {
+            "path": "/api/cron/backfill-covers",
+            "schedule": "0 4 * * *"
+        },
+        {
+            "path": "/api/cron/discover-relationships",
+            "schedule": "0 2 * * *"
+        }
+    ],
+    "env": {
+        "NODE_ENV": "production"
     },
-    {
-      "path": "/api/cron/evaluate",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/cron/backfill-covers",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/cron/discover-relationships",
-      "schedule": "0 2 * * *"
+    "functions": {
+        "api/**/*.ts": {
+            "memory": 1024,
+            "maxDuration": 60
+        },
+        "api/cron/*.ts": {
+            "memory": 1024,
+            "maxDuration": 300
+        }
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "functions": {
-    "api/**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/cron/*.ts": {
-      "memory": 1024,
-      "maxDuration": 300
-    }
-  }
 }
