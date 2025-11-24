@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/generate",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/evaluate",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/backfill-covers",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/discover-relationships",
+      "schedule": "0 2 * * *"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/cron/*.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    }
+  }
+}
