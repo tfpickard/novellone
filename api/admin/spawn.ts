@@ -9,10 +9,11 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { generatePremise } from '../lib/openai.js';
 import { createStory } from '../lib/story-operations.js';
 import { getConfig } from '../lib/config.js';
+import { requireAuth, type AuthenticatedRequest } from '../lib/auth.js';
 import type { ApiResponse, Story } from '../lib/types.js';
 
 export default async function handler(
-  req: VercelRequest,
+  req: AuthenticatedRequest,
   res: VercelResponse
 ): Promise<void> {
   if (req.method !== 'POST') {
@@ -20,9 +21,11 @@ export default async function handler(
     return;
   }
 
+  // Require authentication
+  const isAuthenticated = await requireAuth(req, res);
+  if (!isAuthenticated) return;
+
   try {
-    // TODO: Add authentication check here
-    // For now, allow spawning (add auth later)
 
     const config = await getConfig();
 

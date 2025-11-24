@@ -222,7 +222,7 @@ export async function generateChapterForStory(
   const generationTimeMs = Date.now() - startTime;
 
   // Add chapter to database
-  await addChapter({
+  const chapter = await addChapter({
     storyId,
     chapterNumber,
     content: chapterData.content,
@@ -235,10 +235,13 @@ export async function generateChapterForStory(
 
   console.log(`✓ Chapter ${chapterNumber} generated for story ${storyId}`);
 
-  // Extract entities (in the background, don't block)
-  if (chapterData.entities && chapterData.entities.length > 0) {
-    extractAndLinkEntities(storyId, chapterNumber, chapterData.content)
-      .catch((err) => console.error('Error extracting entities:', err));
+  // Extract entities from chapter content
+  try {
+    const { extractAndLinkEntities } = await import('./entity-operations.js');
+    await extractAndLinkEntities(storyId, chapter.id, chapterNumber, chapterData.content);
+  } catch (error) {
+    console.error('Error extracting entities:', error);
+    // Don't fail the chapter generation if entity extraction fails
   }
 }
 

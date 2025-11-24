@@ -8,10 +8,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { executeWrite } from '../lib/neo4j.js';
 import { resetConfig } from '../lib/config.js';
+import { requireAuth, type AuthenticatedRequest } from '../lib/auth.js';
 import type { ApiResponse } from '../lib/types.js';
 
 export default async function handler(
-  req: VercelRequest,
+  req: AuthenticatedRequest,
   res: VercelResponse
 ): Promise<void> {
   if (req.method !== 'POST') {
@@ -19,9 +20,11 @@ export default async function handler(
     return;
   }
 
+  // Require authentication (this is a dangerous operation!)
+  const isAuthenticated = await requireAuth(req, res);
+  if (!isAuthenticated) return;
+
   try {
-    // TODO: Add strong authentication check here
-    // This is a dangerous operation!
 
     // Parse confirmation from request body
     const { confirm } = req.body as { confirm?: string };

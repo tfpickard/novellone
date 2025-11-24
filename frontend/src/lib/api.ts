@@ -1,21 +1,34 @@
+/**
+ * API Client for Vercel Serverless Backend
+ * Updated for Neo4j + Vercel architecture
+ */
+
 import type { ContentAxisSettingsMap } from './contentAxes';
+
+// ───────────────────────────────────────────────────────────────────────────
+// API Base URL Configuration
+// ───────────────────────────────────────────────────────────────────────────
 
 const publicApiUrl = import.meta.env.VITE_PUBLIC_API_URL as string | undefined;
 let base = publicApiUrl;
 
 if (!base) {
   if (typeof window !== 'undefined') {
-    // Browser fallback: use same origin (goes through Caddy/nginx proxy)
-    // In production, this will be https://hurl.lol
-    // In development, this will be http://localhost:4000
+    // Browser: use same origin
     base = window.location.origin;
   } else {
-    // SSR in Docker fallback: use the Compose service DNS name
-    base = 'http://backend:8000';
+    // SSR: use Vercel URL or localhost
+    base = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000';
   }
 }
 
-const API_BASE = base.startsWith('http') ? base : `http://${base}`;
+const API_BASE = base.startsWith('http') ? base : `https://${base}`;
+
+// ───────────────────────────────────────────────────────────────────────────
+// Error Classes
+// ───────────────────────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
   constructor(
@@ -35,6 +48,29 @@ export class UnauthorizedError extends ApiError {
   }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// API Response Types (Vercel format)
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Request Helper
+// ───────────────────────────────────────────────────────────────────────────
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -48,109 +84,220 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let message = `API request failed: ${response.status}`;
     let detail: unknown;
+
     try {
-      const errorBody = await response.json();
+      const errorBody: ApiResponse = await response.json();
       detail = errorBody;
-      if (typeof errorBody === 'string' && errorBody) {
-        message = errorBody;
-      } else if (errorBody?.detail) {
-        message = Array.isArray(errorBody.detail)
-          ? errorBody.detail.map((entry: any) => entry?.msg ?? entry).join(', ')
-          : errorBody.detail;
+      if (errorBody.error) {
+        message = errorBody.error;
       }
     } catch (error) {
-      // ignore parse errors and fall back to status message
+      // Ignore parse errors
       void error;
     }
+
     if (response.status === 401) {
       throw new UnauthorizedError(message, detail);
     }
     throw new ApiError(message, response.status, detail);
   }
 
-  return response.json();
+  // Handle new API response format
+  const result: ApiResponse<T> = await response.json();
+
+  if (!result.success) {
+    throw new ApiError(result.error || 'Request failed', response.status);
+  }
+
+  return result.data as T;
 }
 
-export type CoverBackfillStatus = {
-  enabled: boolean | null;
-  in_progress: boolean;
-  last_run_at: string | null;
-  next_run_due_at: string | null;
-  processed: number;
-  generated: number;
-  failed: number;
-  remaining: number | null;
-  duration_ms: number | null;
-  requested: number | null;
-  reason: string | null;
-  skipped: boolean;
-};
+// ───────────────────────────────────────────────────────────────────────────
+// Type Definitions (Updated for Neo4j)
+// ───────────────────────────────────────────────────────────────────────────
 
-export type RuntimeConfig = {
-  chapter_interval_seconds: number;
-  evaluation_interval_chapters: number;
-  quality_score_min: number;
-  max_chapters_per_story: number;
-  min_active_stories: number;
-  max_active_stories: number;
-  context_window_chapters: number;
-  openai_model: string;
-  openai_premise_model: string;
-  openai_eval_model: string;
-  openai_temperature_chapter: number;
-  openai_temperature_premise: number;
-  openai_temperature_eval: number;
-  premise_prompt_refresh_interval: number;
-  premise_prompt_stats_window: number;
-  premise_prompt_variation_strength: number;
-  chaos_initial_min: number;
-  chaos_initial_max: number;
-  chaos_increment_min: number;
-  chaos_increment_max: number;
-  cover_backfill_enabled: boolean;
-  cover_backfill_interval_minutes: number;
-  cover_backfill_batch_size: number;
-  cover_backfill_pause_seconds: number;
-  content_axes: ContentAxisSettingsMap;
-  cover_backfill_status?: CoverBackfillStatus;
-};
+export type StoryStatus = 'active' | 'completed' | 'killed';
 
-export type PremisePromptState = {
-  directives: string[];
-  rationale: string | null;
-  generated_at: string | null;
-  variation_strength: number | null;
-  manual_override: boolean;
-  stats_snapshot?: Record<string, unknown> | null;
-  hurllol_title: string | null;
-  hurllol_title_components?: string[] | null;
-  hurllol_title_generated_at: string | null;
-};
-
-export type PromptStateResponse = {
-  premise: PremisePromptState;
-};
-
-export type PromptUpdatePayload = {
-  directives?: string[];
-  rationale?: string | null;
-};
-
-export type HurllolBanner = {
-  title: string | null;
-  components: string[];
-  generated_at: string | null;
-};
-
-export function getStories(params: URLSearchParams): Promise<any> {
-  return request(`/api/stories?${params.toString()}`);
+export interface Story {
+  id: string;
+  title: string;
+  premise: string;
+  status: StoryStatus;
+  createdAt: Date | string;
+  completedAt?: Date | string;
+  completionReason?: string;
+  coverImageUrl?: string;
+  styleAuthors: string[];
+  narrativePerspective: string;
+  tone: string;
+  genreTags: string[];
+  estimatedReadingMinutes: number;
+  totalTokens: number;
 }
 
-export function getStory(id: string): Promise<any> {
+export interface Chapter {
+  id: string;
+  chapterNumber: number;
+  content: string;
+  createdAt: Date | string;
+  tokensUsed: number;
+  generationTimeMs: number;
+  modelUsed: string;
+  wordCount: number;
+  contentLevels: ContentLevels;
+  chaos?: ChaosParameters;
+}
+
+export interface ChaosParameters {
+  absurdity: number;
+  surrealism: number;
+  ridiculousness: number;
+  insanity: number;
+}
+
+export interface ContentLevels {
+  sexualContent: number;
+  violence: number;
+  strongLanguage: number;
+  drugUse: number;
+  horrorSuspense: number;
+  goreGraphicImagery: number;
+  romanceFocus: number;
+  crimeIllicitActivity: number;
+  politicalIdeology: number;
+  supernaturalOccult: number;
+  cosmicHorror: number;
+  bureaucraticSatire: number;
+  archivalGlitch: number;
+}
+
+export interface Evaluation {
+  id: string;
+  chapterNumber: number;
+  overallScore: number;
+  coherenceScore: number;
+  noveltyScore: number;
+  engagementScore: number;
+  pacingScore: number;
+  shouldContinue: boolean;
+  reasoning: string;
+  issues: string[];
+  evaluatedAt: Date | string;
+  modelUsed: string;
+}
+
+export interface Entity {
+  id: string;
+  name: string;
+  canonicalName: string;
+  entityType: string;
+  description?: string;
+  aliases: string[];
+  firstSeenAt: Date | string;
+  totalMentions: number;
+  importance: number;
+  updatedAt: Date | string;
+}
+
+export interface EntityMention {
+  entity: Entity;
+  firstChapterNumber: number;
+  lastChapterNumber: number;
+  mentionCount: number;
+  importance: number;
+  sentiment: string;
+  relationshipToTom: string;
+}
+
+export interface TomVariant {
+  variantName: string;
+  role: string;
+  characterization?: string;
+  firstAppearanceChapter: number;
+}
+
+export interface StoryWithDetails extends Story {
+  chapters: Chapter[];
+  evaluations: Evaluation[];
+  entities: EntityMention[];
+  tomVariant?: TomVariant;
+}
+
+export interface StatsResponse {
+  stories: {
+    active: number;
+    completed: number;
+    killed: number;
+    total: number;
+  };
+  chapters: {
+    total: number;
+    recentChapters: Chapter[];
+  };
+  tokens: {
+    total: number;
+  };
+  chaos: ChaosParameters;
+  content: Partial<ContentLevels>;
+  entities: {
+    total: number;
+    topEntities: Array<{
+      name: string;
+      mentions: number;
+      importance: number;
+    }>;
+  };
+  universes: {
+    total: number;
+    clusters: number;
+  };
+  tom: {
+    totalAppearances: number;
+    variants: string[];
+  };
+}
+
+export interface RuntimeConfig {
+  minActiveStories: number;
+  maxActiveStories: number;
+  maxChaptersPerStory: number;
+  chapterIntervalMinutes: number;
+  evaluationIntervalChapters: number;
+  qualityScoreMin: number;
+  coverArtBackfillEnabled: boolean;
+  coverArtBackfillBatchSize: number;
+  modelPremise: string;
+  modelChapter: string;
+  modelEvaluation: string;
+  modelCoverArt: string;
+  maxTokensPremise: number;
+  maxTokensChapter: number;
+  maxTokensEvaluation: number;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// API Functions
+// ───────────────────────────────────────────────────────────────────────────
+
+export function getStories(params?: {
+  status?: StoryStatus;
+  limit?: number;
+  offset?: number;
+}): Promise<PaginatedResponse<Story>> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const query = searchParams.toString();
+  return request(`/api/stories${query ? `?${query}` : ''}`);
+}
+
+export function getStory(id: string): Promise<StoryWithDetails> {
   return request(`/api/stories/${id}`);
 }
 
-export function killStory(id: string, reason?: string): Promise<any> {
+export function killStory(id: string, reason?: string): Promise<Story> {
   const body = reason ? { reason } : {};
   return request(`/api/stories/${id}/kill`, {
     method: 'POST',
@@ -158,96 +305,27 @@ export function killStory(id: string, reason?: string): Promise<any> {
   });
 }
 
-export function deleteStory(id: string): Promise<any> {
+export function deleteStory(id: string): Promise<void> {
   return request(`/api/stories/${id}`, {
     method: 'DELETE'
   });
 }
 
-export function spawnStory(): Promise<any> {
+export function spawnStory(): Promise<Story> {
   return request('/api/admin/spawn', {
     method: 'POST'
   });
 }
 
-export function resetSystem(): Promise<any> {
+export function resetSystem(confirm: string = 'DELETE_ALL_STORIES'): Promise<void> {
   return request('/api/admin/reset', {
-    method: 'POST'
+    method: 'POST',
+    body: JSON.stringify({ confirm })
   });
 }
 
-export function runCoverBackfill(): Promise<any> {
-  return request('/api/admin/backfill-cover-images', {
-    method: 'POST'
-  });
-}
-
-export function getStats(): Promise<any> {
+export function getStats(): Promise<StatsResponse> {
   return request('/api/stats');
-}
-
-export function getUniverseOverview(): Promise<any> {
-  return request('/api/universe/overview');
-}
-
-export function getUniverseMetrics(): Promise<any> {
-  return request('/api/universe/metrics');
-}
-
-export function getStoryRecommendations(): Promise<any> {
-  return request('/api/recommendations');
-}
-
-export type EntityOverridePayload = {
-  story_id?: string | null;
-  name: string;
-  action: 'suppress' | 'merge';
-  target_name?: string | null;
-  notes?: string | null;
-};
-
-export type EntityOverrideUpdatePayload = Partial<{
-  name: string;
-  action: 'suppress' | 'merge';
-  target_name: string | null;
-  notes: string | null;
-}>;
-
-export function createEntityOverride(payload: EntityOverridePayload): Promise<any> {
-  return request('/api/universe/overrides', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
-}
-
-export function updateEntityOverride(id: string, payload: EntityOverrideUpdatePayload): Promise<any> {
-  return request(`/api/universe/overrides/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload)
-  });
-}
-
-export function deleteEntityOverride(id: string): Promise<any> {
-  return request(`/api/universe/overrides/${id}`, {
-    method: 'DELETE'
-  });
-}
-
-export function listEntityOverrides(params?: { story_id?: string | null }): Promise<any> {
-  const search = new URLSearchParams();
-  if (params?.story_id) {
-    search.set('story_id', params.story_id);
-  }
-  const query = search.toString();
-  const suffix = query ? `?${query}` : '';
-  return request(`/api/universe/overrides${suffix}`);
-}
-
-export function queueMetaRefresh(payload?: { story_id?: string | null; full_rebuild?: boolean }): Promise<any> {
-  return request('/api/universe/refresh', {
-    method: 'POST',
-    body: JSON.stringify(payload ?? {})
-  });
 }
 
 export function getConfig(): Promise<RuntimeConfig> {
@@ -261,24 +339,105 @@ export function updateConfig(payload: Partial<RuntimeConfig>): Promise<RuntimeCo
   });
 }
 
-export function getPromptState(): Promise<PromptStateResponse> {
-  return request('/api/prompts');
+// ───────────────────────────────────────────────────────────────────────────
+// Health Check
+// ───────────────────────────────────────────────────────────────────────────
+
+export function getHealth(): Promise<{
+  status: string;
+  database: {
+    connected: boolean;
+    serverInfo?: {
+      version: string;
+      address: string;
+    };
+  };
+}> {
+  return request('/api/health');
 }
 
-export function updatePromptState(payload: PromptUpdatePayload): Promise<PromptStateResponse> {
-  return request('/api/prompts', {
-    method: 'PATCH',
-    body: JSON.stringify(payload)
-  });
+// ───────────────────────────────────────────────────────────────────────────
+// Legacy Compatibility (TODO: Remove after frontend migration)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function getUniverseOverview(): Promise<any> {
+  // TODO: Implement universe overview endpoint
+  console.warn('Universe overview not yet implemented in new API');
+  return Promise.resolve({ entities: [], themes: [], links: [] });
 }
 
-export function getHurllol(): Promise<HurllolBanner> {
-  return request('/api/hurllol');
+export function getUniverseMetrics(): Promise<any> {
+  // TODO: Implement universe metrics endpoint
+  console.warn('Universe metrics not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export function getStoryRecommendations(): Promise<any> {
+  // TODO: Implement recommendations endpoint
+  console.warn('Recommendations not yet implemented in new API');
+  return Promise.resolve({ recommended: [] });
 }
 
 export function generateChapter(id: string): Promise<any> {
-  return request(`/api/stories/${id}/generate`, {
-    method: 'POST'
-  });
+  // TODO: Implement manual chapter generation endpoint
+  console.warn('Manual chapter generation not yet implemented in new API');
+  return Promise.resolve({});
 }
 
+export function runCoverBackfill(): Promise<any> {
+  // Cron job handles this automatically now
+  console.warn('Cover backfill now runs automatically via cron job');
+  return Promise.resolve({});
+}
+
+// Stub types for legacy compatibility
+export type EntityOverridePayload = any;
+export type EntityOverrideUpdatePayload = any;
+
+export function createEntityOverride(payload: EntityOverridePayload): Promise<any> {
+  console.warn('Entity overrides not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export function updateEntityOverride(id: string, payload: EntityOverrideUpdatePayload): Promise<any> {
+  console.warn('Entity overrides not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export function deleteEntityOverride(id: string): Promise<any> {
+  console.warn('Entity overrides not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export function listEntityOverrides(params?: any): Promise<any> {
+  console.warn('Entity overrides not yet implemented in new API');
+  return Promise.resolve({ overrides: [] });
+}
+
+export function queueMetaRefresh(payload?: any): Promise<any> {
+  console.warn('Meta refresh not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export type PremisePromptState = any;
+export type PromptStateResponse = any;
+export type PromptUpdatePayload = any;
+export type HurllolBanner = any;
+
+export function getPromptState(): Promise<PromptStateResponse> {
+  console.warn('Prompt state not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export function updatePromptState(payload: PromptUpdatePayload): Promise<PromptStateResponse> {
+  console.warn('Prompt state updates not yet implemented in new API');
+  return Promise.resolve({});
+}
+
+export function getHurllol(): Promise<HurllolBanner> {
+  console.warn('Hurllol banner not yet implemented in new API');
+  return Promise.resolve({ title: null, components: [], generated_at: null });
+}
+
+// Export API base for SSE
+export { API_BASE };

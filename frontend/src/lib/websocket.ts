@@ -1,32 +1,17 @@
-export type StorySocketMessage =
-  | { type: 'new_chapter'; story_id: string; chapter: any }
-  | { type: 'story_completed'; story_id: string; reason: string; cover_image_url?: string }
-  | { type: 'system_reset'; deleted_stories: number };
+/**
+ * WebSocket Compatibility Layer
+ *
+ * This module maintains backwards compatibility with the old WebSocket API
+ * while using Server-Sent Events (SSE) under the hood.
+ *
+ * @deprecated Use `import { createStorySSE, createStoryEventSource } from './sse'` instead
+ */
 
-export function createStorySocket(onMessage: (message: StorySocketMessage) => void) {
-  let endpoint = import.meta.env.VITE_PUBLIC_WS_URL as string | undefined;
-  if (!endpoint) {
-    if (typeof window !== 'undefined') {
-      // Use same host as current page (goes through Caddy/nginx proxy)
-      // In production: wss://hurl.lol/ws/stories
-      // In development: ws://localhost:4000/ws/stories
-      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      endpoint = `${scheme}://${window.location.host}/ws/stories`;
-    } else {
-      // SSR fallback
-      endpoint = 'ws://backend:8000/ws/stories';
-    }
-  }
+export { createStorySocket, type StorySocketMessage } from './sse';
 
-  const socket = new WebSocket(endpoint);
-  socket.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    } catch (error) {
-      console.error('Failed to parse socket message', error);
-    }
-  };
-
-  return socket;
-}
+// Note: The WebSocket has been replaced with Server-Sent Events (SSE).
+// The createStorySocket function now returns an object with a close() method
+// that mimics the WebSocket API for backwards compatibility.
+//
+// For new code, use the SSE API directly:
+// import { createStoryEventSource } from './sse';

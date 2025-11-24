@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/backfill-covers",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/discover-relationships",
+      "schedule": "0 2 * * *"
     }
   ],
   "env": {
